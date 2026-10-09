@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#050b0c" />
+    <title>Hardtech — Visión 3D</title>
+    <link rel="icon" href="./ht_logo.png" type="image/png" />
+    <link rel="stylesheet" href="./presentation.css" />
+    <link rel="stylesheet" href="./modules/studio/studio.css" />
+    <link rel="stylesheet" href="./event.css" />
+    <link rel="stylesheet" href="./modules/products/product-gallery.css" />
+    <link rel="stylesheet" href="./modules/settings/settings.css" />
+    <script type="importmap">
+      { "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }
+    </script>
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"></div>
+    <header class="masthead">
+      <a class="brand" href="./" aria-label="Hardtech, inicio"
+        ><img src="./ht_logo.png" alt="" /><span>HARDTECH<span class="brand-sub">HUMAN TECHNOLOGY</span></span></a
+      >
+      <div class="edition">
+        <span id="title">VISIÓN 3D</span><span class="edition-line"></span><span>EXPERIENCIA INMERSIVA</span>
+      </div>
+      <div class="masthead-actions">
+        <div class="connection" role="status"><span id="dot"></span><span id="connection-label">Conectando</span></div>
+        <button type="button" class="settings-launch" aria-haspopup="dialog">Configuración</button>
+      </div>
+    </header>
+    <main class="story">
+      <div class="eyebrow"><span class="small-line"></span> EL SIGUIENTE PASO ES HUMANO</div>
+      <h1 id="headline">La tecnología<br />ya tiene<br /><span>presencia.</span></h1>
+      <p id="description">Una nueva forma de conectar el mundo físico con lo que imaginamos.</p>
+      <div class="story-rule"></div>
+      <div class="chapter">
+        <span id="chapter-number">01</span>
+        <div>
+          <strong id="chapter-title">De lo posible a lo presente</strong
+          ><span id="chapter-detail">Visión espacial · Interacción natural</span>
+        </div>
+      </div>
+    </main>
+    <div class="scene-label">
+      <span class="cross">+</span><span id="scene-label">IDENTIDAD / HARDTECH</span><span class="scene-line"></span
+      ><span>3D</span>
+    </div>
+    <div class="scene-bottom" aria-hidden="true">
+      <span class="cross">+</span><span>EL FUTURO TOMA FORMA CONTIGO</span>
+    </div>
+    <div id="toast" role="status"></div>
+    <div id="invite" class="invitation">
+      <span class="invite-icon" aria-hidden="true">↗</span>
+      <div>
+        <strong id="invite-main">Entra en escena.</strong
+        ><span id="invite-detail">Colócate a 2–3 metros de la cámara.</span>
+      </div>
+    </div>
+    <div id="guide" class="hidden" aria-label="Instrucciones de interacción">
+      <span data-g="move"
+        ><span class="step">01</span
+        ><span><em>Muévete con naturalidad</em><small>Tu presencia se convierte en movimiento.</small></span></span
+      >
+      <span data-g="watch"
+        ><span class="step">02</span
+        ><span
+          ><em>Acerca la muñeca izquierda al pecho</em><small>Descubre una nueva dimensión del tiempo.</small></span
+        ></span
+      >
+    </div>
+    <aside class="scene-status">
+      <span class="status-tick"></span><span id="tracking-state">ESPERANDO TU PRESENCIA</span
+      ><strong id="distance">—</strong><span id="distance-label">DISTANCIA</span>
+    </aside>
+    <footer class="footer">
+      <span>INGENIERÍA QUE SE SIENTE.</span><span>HARDTECH <span class="footer-slash">/</span> VISIÓN 3D</span>
+    </footer>
+    <nav class="controls" aria-label="Controles de presentación">
+      <button id="demo-button" type="button" aria-pressed="false" title="Demostración sin cámara (P)">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 9 6-9 6Z" /></svg><span>Ver demo</span>
+      </button>
+      <span class="control-divider"></span>
+      <button id="studio-button" type="button" aria-pressed="true" title="Crear con gestos / espejo (E)">Crear</button>
+      <button id="appearance-button" type="button" title="Elegir apariencia (A)">Personalizar</button>
+      <button id="view-button" type="button" aria-pressed="true" title="Retrato / cuerpo completo (V)">Retrato</button>
+      <button id="surface-button" type="button" aria-pressed="false" title="Aura astral / humano sólido (M)">
+        Aura astral
+      </button>
+      <button id="motion-button" type="button" aria-pressed="false" title="Reducir efectos de movimiento (R)">
+        Movimiento
+      </button>
+      <button id="quality-button" type="button" title="Cambiar calidad visual (Q)">Auto</button>
+      <button
+        id="fullscreen-button"
+        class="icon-button"
+        type="button"
+        title="Pantalla completa (F)"
+        aria-label="Pantalla completa"
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4" /></svg>
+      </button>
+      <button id="help-button" class="icon-button" type="button" title="Ayuda y atajos (?)" aria-label="Ayuda y atajos">
+        ?
+      </button>
+    </nav>
+    <dialog id="appearance-dialog">
+      <form method="dialog"><button class="close-help" aria-label="Cerrar personalización">×</button></form>
+      <span class="eyebrow">DIRECCIÓN DE ARTE</span>
+      <h2>Tu presencia, tu estilo.</h2>
+      <p>Elige la apariencia de tu avatar. La cámara acompaña tus movimientos.</p>
+      <fieldset>
+        <legend>Estilo</legend>
+        <div class="choices">
+          <button type="button" data-render="aura" aria-pressed="true">Aura astral</button>
+          <button type="button" data-render="human" aria-pressed="false">Humano sólido</button>
+        </div>
+      </fieldset>
+      <fieldset class="human-options">
+        <legend>Apariencia humana</legend>
+        <div class="choices">
+          <button type="button" data-appearance="neutral" aria-pressed="true">Neutra</button>
+          <button type="button" data-appearance="feminine" aria-pressed="false">Femenina</button>
+          <button type="button" data-appearance="masculine" aria-pressed="false">Masculina</button>
+        </div>
+      </fieldset>
+      <fieldset class="human-options">
+        <legend>Acabado</legend>
+        <div class="choices">
+          <button type="button" data-finish="natural" aria-pressed="true">Natural</button>
+          <button type="button" data-finish="sculpture" aria-pressed="false">Marfil y oro</button>
+          <button type="button" data-finish="hologram" aria-pressed="false">Holograma</button>
+        </div>
+      </fieldset>
+      <fieldset id="skin-options" class="human-options">
+        <legend>Tono de piel</legend>
+        <div class="choices skin-choices">
+          <button
+            type="button"
+            data-skin="#e7b894"
+            style="--swatch: #e7b894"
+            aria-pressed="false"
+            aria-label="Tono de piel claro"
+          ></button>
+          <button
+            type="button"
+            data-skin="#c98e6b"
+            style="--swatch: #c98e6b"
+            aria-pressed="true"
+            aria-label="Tono de piel medio"
+          ></button>
+          <button
+            type="button"
+            data-skin="#845334"
+            style="--swatch: #845334"
+            aria-pressed="false"
+            aria-label="Tono de piel oscuro"
+          ></button>
+        </div>
+      </fieldset>
+      <p class="help-note">La apariencia la eliges tú. No se deduce tu género ni tu identidad a partir de la cámara.</p>
+      <form method="dialog">
+        <button class="apply-style">Entrar en escena <span aria-hidden="true">↗</span></button>
+      </form>
+    </dialog>
+    <dialog id="help-dialog">
+      <form method="dialog"><button class="close-help" aria-label="Cerrar ayuda">×</button></form>
+      <span class="eyebrow">CONTROL DE ESCENA</span>
+      <h2>Listo para presentar.</h2>
+      <p>
+        La vista del evento refleja tu cuerpo con un aura. Mueve las manos para dibujar luz. Júntalas para formar una
+        esfera; cuando esté cargada, sepáralas para liberarla. O muestra los controles del operador. E abre el estudio
+        de maquetas opcional.
+      </p>
+      <dl>
+        <dt>A</dt>
+        <dd>Personalizar aura o apariencia humana</dd>
+        <dt>V</dt>
+        <dd>Retrato / cuerpo completo</dd>
+        <dt>P</dt>
+        <dd>Activar / detener demostración</dd>
+        <dt>F</dt>
+        <dd>Pantalla completa</dd>
+        <dt>M</dt>
+        <dd>Aura astral / humano sólido</dd>
+        <dt>R</dt>
+        <dd>Reducir movimiento ambiental</dd>
+        <dt>Q</dt>
+        <dd>Calidad: automática / alta / ligera</dd>
+        <dt>H</dt>
+        <dd>Ocultar textos y controles</dd>
+        <dt>D</dt>
+        <dd>Diagnóstico de captura y render</dd>
+      </dl>
+      <p class="help-note">
+        Para captura de cuerpo completo, deja espacio alrededor de manos y pies y utiliza luz frontal uniforme.
+      </p>
+    </dialog>
+    <div id="debug"></div>
+    <div id="fatal" role="alert" hidden>
+      <strong>No se pudo iniciar la escena 3D.</strong>
+      <p id="fatal-detail">Comprueba que la aceleración gráfica esté habilitada y vuelve a cargar.</p>
+      <button onclick="location.reload()">Reintentar</button>
+    </div>
+    <script type="module">
+      import { center } from './modules/settings/index.js';
+      import('./app.js').catch(error => {
+        console.error(error);
+        document.getElementById('fatal').hidden = false;
+        document.getElementById('connection-label').textContent = 'Escena no disponible';
+        center.status('La escena 3D no pudo iniciar. Puedes cambiar la calidad y recargar.');
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+Three.js 0.186.0 / MIT / Copyright Three.js Authors (meshoptimizer decoder: MIT, Arseny Kapoulkine)
+Official package: https://registry.npmjs.org/three/-/three-0.186.0.tgz
+SHA-256: 61eeff9d7616005c9a481c796f52287d81fbbbc0d55eaca5565322924252c1aa
+Retrieved 2026-10-09. Unmodified examples/jsm/libs/meshopt_decoder.module.js.
+License: ../loaders/THREE-LICENSE.

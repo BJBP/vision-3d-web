@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "collections": [
+    {
+      "slug": "coleccion",
+      "name": "Colección",
+      "status": "published",
+      "start": true,
+      "layout": "ribbon",
+      "items": [
+        { "id": "watch", "type": "model", "name": "Reloj", "model": "watch", "icon": "watch" },
+        { "id": "headphones", "type": "model", "name": "Auriculares", "model": "headphones", "icon": "audio" },
+        { "id": "camera", "type": "model", "name": "Cámara", "model": "camera", "icon": "camera" },
+        { "id": "speaker", "type": "model", "name": "Altavoz", "model": "speaker", "icon": "speaker" },
+        { "id": "avatar", "type": "avatar", "name": "Avatar", "icon": "avatar" }
+      ]
+    },
+    {
+      "slug": "muestra",
+      "name": "Muestra mixta",
+      "status": "published",
+      "layout": "ribbon",
+      "items": [
+        { "id": "watch", "type": "model", "name": "Reloj", "model": "watch" },
+        { "id": "avatar", "type": "avatar", "name": "Avatar" },
+        { "id": "speaker", "type": "model", "name": "Altavoz", "model": "speaker" },
+        { "id": "completa", "type": "collection", "name": "Colección completa", "target": "coleccion" }
+      ]
+    }
+  ]
+}

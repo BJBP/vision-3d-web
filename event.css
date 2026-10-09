@@ -1,0 +1,107 @@
+/* Event wall: 2.5 × 2 metres (5:4). Keep the central stage clear at every size. */
+body.event-mode .story,
+body.event-mode .edition,
+body.event-mode .scene-label,
+body.event-mode .scene-bottom,
+body.event-mode .scene-status,
+body.event-mode .footer,
+body.event-mode #invite,
+body.event-mode #guide {
+  display: none;
+}
+body.event-mode .atmosphere {
+  background: radial-gradient(ellipse at 50% 46%, transparent 30%, #020a0960 78%, #020706b3);
+  opacity: 0.65;
+}
+body.event-mode .masthead {
+  top: 4%;
+  left: 4%;
+  right: 4%;
+  align-items: flex-start;
+}
+body.event-mode .brand {
+  font-size: clamp(16px, 2vmin, 30px);
+  gap: 1vmin;
+  letter-spacing: 0.15em;
+}
+body.event-mode .brand img {
+  width: 3.5vmin;
+  height: 3.5vmin;
+  min-width: 24px;
+  min-height: 24px;
+}
+body.event-mode .brand-sub {
+  display: none;
+}
+body.event-mode .connection {
+  font-size: 0;
+  gap: 0;
+  margin-top: 1vmin;
+}
+body.event-mode #dot {
+  width: 0.65vmin;
+  height: 0.65vmin;
+  min-width: 5px;
+  min-height: 5px;
+}
+body.event-mode .controls {
+  display: none;
+}
+body.event-mode.operator-controls .controls {
+  display: flex;
+  opacity: 1;
+  pointer-events: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: 2%;
+}
+body.event-mode.operator-controls .connection {
+  font-size: 11px;
+  gap: 8px;
+}
+#event-caption {
+  position: fixed;
+  z-index: 4;
+  bottom: 5.2%;
+  left: 6%;
+  right: 6%;
+  text-align: center;
+  pointer-events: none;
+}
+#event-cue {
+  font-size: clamp(22px, 3.1vmin, 52px);
+  font-weight: 300;
+  letter-spacing: 0.015em;
+  color: #d6efdf;
+  text-shadow:
+    0 2px 20px #000,
+    0 0 45px #68ffc533;
+}
+#event-caption.engaged #event-cue {
+  color: #b9ffe4;
+}
+#event-demo {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  color: #90afa1;
+  font-size: clamp(10px, 1vmin, 18px);
+  letter-spacing: 0.22em;
+}
+body.clean #event-caption {
+  display: none;
+}
+@media (max-width: 700px) {
+  body.event-mode .brand {
+    font-size: 15px;
+  }
+  body.event-mode.operator-controls .controls {
+    max-width: 95%;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  #event-cue {
+    font-size: 23px;
+  }
+}

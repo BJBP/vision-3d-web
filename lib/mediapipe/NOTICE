@@ -1,0 +1,13 @@
+MediaPipe Tasks Vision
+Copyright Google LLC.
+Licensed under the Apache License, Version 2.0; see LICENSE.
+
+Vendored official @mediapipe/tasks-vision npm runtime version 1.1.0.
+Source: https://github.com/google-ai-edge/mediapipe
+Package: https://registry.npmjs.org/@mediapipe/tasks-vision/-/tasks-vision-1.1.0.tgz
+Tarball SHA-256: 46fc3d3d13fa5de631915929d045be2f74bb32e909d7a5b3a322b28976f54165
+Retrieved: 2026-10-07.
+Included: vision_bundle.mjs and wasm/vision_wasm_module_internal.js/.wasm.
+Requires WebAssembly SIMD; the worker reports an actionable error otherwise.
+LICENSE obtained from https://raw.githubusercontent.com/google-ai-edge/mediapipe/master/LICENSE
+No source code modifications. Models reused from the project's models directory.

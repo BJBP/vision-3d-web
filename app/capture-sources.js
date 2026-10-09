@@ -1,0 +1,148 @@
+// Fuentes de captura: OAK-D por WebSocket, webcam del navegador, demo o ninguna. Gestiona conexión,
+// reconexión y cambio de fuente; cada paquete recibido se entrega a onPacket (formato en docs/contracts.md).
+import { createCameraSource } from '../modules/capture/index.js';
+
+const WEBCAM_STATUS = {
+  starting: 'Preparando cámara y modelos…',
+  streaming: 'Webcam activa · sin profundidad medida',
+  stopped: 'Fuente detenida',
+};
+
+const URL_SOURCES = ['webcam', 'oak', 'demo'];
+
+// Fuente inicial según la URL: ?demo=1 manda; luego ?source=webcam|oak|demo; si no, OAK-D salvo ?ws=off.
+export function initialSource(params) {
+  if (params.get('demo') === '1') return 'demo';
+  if (URL_SOURCES.includes(params.get('source'))) return params.get('source');
+  return params.get('ws') === 'off' ? 'off' : 'oak';
+}
+
+// center: panel de configuración. getCaptureOptions() → { captureWidth, analysisFps, preview }.
+// onSwitch(source) reinicia el estado de la app al cambiar de fuente; onFail() al no poder iniciarla.
+export function createCaptureSources({ params, center, getCaptureOptions, onPacket, onSwitch, onFail, onPreview }) {
+  let mode = initialSource(params);
+  let socket = null,
+    reconnectTimer = null,
+    version = 0,
+    lastLiveRequest;
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const defaultEndpoint =
+    params.get('ws') === 'off' ? '' : `${scheme}://${location.hostname || 'localhost'}:${params.get('ws') || 8765}`;
+
+  const webcam = createCameraSource({
+    onPacket: packet => {
+      if (mode === 'webcam') onPacket(packet);
+    },
+    onStatus: state => {
+      if (state === 'stopped' && mode === 'webcam') onPacket({ cam: false });
+      center?.status(WEBCAM_STATUS[state] || state);
+    },
+    onDevices: list => center?.devices(list),
+    onError: error => center?.message(error.message),
+    onPreview,
+  });
+
+  function closeSocket() {
+    if (!socket) return;
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.close();
+    socket = null;
+  }
+
+  function connectOak(endpoint, requested = version) {
+    if (mode !== 'oak' || requested !== version) return;
+    socket = new WebSocket(endpoint);
+    socket.onmessage = event => {
+      if (mode !== 'oak' || requested !== version) return;
+      try {
+        const packet = JSON.parse(event.data);
+        onPacket(packet);
+        center?.status(packet?.cam === true ? 'OAK-D conectada' : 'Esperando captura OAK-D…');
+      } catch {
+        /* Ignore malformed camera messages. */
+      }
+    };
+    socket.onclose = () => {
+      if (mode !== 'oak' || requested !== version) return;
+      onPacket({ cam: false });
+      center?.status('Servicio OAK-D sin conexión; reintentando…');
+      reconnectTimer = setTimeout(() => connectOak(endpoint, requested), 1500);
+    };
+    socket.onerror = () => socket?.close();
+  }
+
+  // fallback: fuente a usar si esta no puede iniciarse (p. ej. 'demo' si se niega el permiso de cámara).
+  async function select({ source, deviceId = '', endpoint = defaultEndpoint, fallback }) {
+    const requested = ++version;
+    center?.message('');
+    if (source === 'webcam' || source === 'oak') lastLiveRequest = { source, deviceId, endpoint };
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    closeSocket();
+    webcam.stop();
+    mode = source;
+    onSwitch(source);
+    if (source !== 'off') center?.source(source);
+    if (source === 'demo') {
+      center?.status('Demostración · movimiento simulado');
+      return;
+    }
+    if (source === 'off') {
+      center?.status('Fuente detenida');
+      return;
+    }
+    try {
+      if (source === 'webcam') {
+        const { captureWidth, analysisFps, preview } = getCaptureOptions();
+        await webcam.start({ deviceId, captureWidth, analysisFps });
+        if (requested !== version) return;
+        webcam.setPreview(preview);
+      } else if (source === 'oak') {
+        const url = new URL(endpoint);
+        const insecure = location.protocol === 'https:' && url.protocol !== 'wss:';
+        if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password || insecure)
+          throw Error('Usa un servicio OAK-D con WebSocket seguro (wss://) en HTTPS.');
+        center?.status('Conectando al servicio OAK-D…');
+        connectOak(url.href, requested);
+      }
+    } catch (error) {
+      if (requested !== version || error.name === 'AbortError') return;
+      mode = 'off';
+      onFail();
+      if (fallback) {
+        await select({ source: fallback });
+        center?.message(`${error.message} Se muestra la demostración; elige la fuente en Configuración.`);
+        return;
+      }
+      center?.status('No se pudo iniciar la fuente');
+      center?.message(error.message);
+    }
+  }
+
+  // Al volver de demo: la última fuente real elegida, o la OAK-D si hay servicio configurado.
+  function liveRequest() {
+    return lastLiveRequest || (defaultEndpoint ? { source: 'oak' } : { source: 'off' });
+  }
+
+  addEventListener('pagehide', () => {
+    version++;
+    mode = 'off';
+    clearTimeout(reconnectTimer);
+    if (socket) {
+      socket.onclose = null;
+      socket.close();
+    }
+    webcam.stop();
+  });
+
+  return {
+    webcam,
+    defaultEndpoint,
+    select,
+    liveRequest,
+    get mode() {
+      return mode;
+    },
+  };
+}
