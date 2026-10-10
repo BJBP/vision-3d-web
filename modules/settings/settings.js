@@ -80,7 +80,7 @@ export const PRESETS = Object.freeze({
 });
 const enums = {
   background: ['solid', 'gradient', 'video'],
-  appearance: ['neutral', 'feminine', 'masculine'],
+  appearance: ['neutral', 'feminine', 'masculine', 'tree'],
   finish: ['natural', 'sculpture', 'hologram'],
   quality: ['auto', 'low', 'balanced', 'high', 'custom'],
   particleShape: ['circle', 'square', 'diamond', 'star'],
@@ -272,6 +272,7 @@ export function createSettings({
             ['neutral', 'Neutra'],
             ['feminine', 'Femenina'],
             ['masculine', 'Masculina'],
+            ['tree', 'Árbol'],
           ]) +
           select('finish', 'Acabado', [
             ['natural', 'Natural'],

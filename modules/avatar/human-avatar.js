@@ -1,8 +1,9 @@
-// Avatar humano realista (neutral, femenino, masculino) con acabados natural, escultura u
+// Avatar humano realista (neutral, femenino, masculino) o el árbol de madera, con acabados natural, escultura u
 // holograma. createHumanAvatar(uniforms, scale, appearance) carga la malla de web/assets/human.
 import * as THREE from 'three';
 
-export const APPEARANCES = ['neutral', 'feminine', 'masculine'];
+// «tree»: personaje original de madera (tools/build_tree_avatar.mjs), mismo esqueleto y formato.
+export const APPEARANCES = ['neutral', 'feminine', 'masculine', 'tree'];
 export const FINISHES = ['natural', 'sculpture', 'hologram'];
 const FRAGMENT = /* glsl */ `
   uniform vec3 uMagic,uSkin;uniform float uStage,uSurface,uFinish,uTime,uMotion;
@@ -65,6 +66,18 @@ const FRAGMENT = /* glsl */ `
       color=mix(sclera,irisCol,iris);color=mix(color,vec3(.002,.003,.002),pupil);
       color*=.30+.75*d+.15*f;
       color+=vec3(.8,.86,.82)*pow(max(0.,dot(n,normalize(key+view))),180.)*.7;
+    }else if(part>5.5 && part<6.5){
+      // Avatar «Árbol»: corteza con vetas a lo largo de cada rama (vDetail.x a lo largo, .y alrededor).
+      float grain=.72+.28*sin(vDetail.y*6.2832*7.+sin(vDetail.x*38.)*1.6);
+      color=vec3(.15,.085,.04)*(.32+.85*wrapped+.15*f)*grain+vec3(.20,.14,.08)*rim*.25;
+      if(uFinish>.5 && uFinish<1.5)color=vec3(.64,.60,.50)*(.22+.75*wrapped)*grain+vec3(.32,.23,.11)*rim;
+      if(uFinish>1.5)color=vec3(.045,.09,.07)+uMagic*(.17+.3*d+.48*rim);
+    }else if(part>6.5 && part<7.5){
+      color=vec3(.09,.27,.07)*(.35+.8*wrapped+.2*f)+vec3(.30,.55,.20)*rim*.25;
+      if(uFinish>1.5)color=vec3(.03,.10,.06)+uMagic*(.25+.5*rim);
+    }else if(part>7.5){
+      // Ojos del árbol: brillo cálido propio, sin iris humano.
+      color=vec3(.95,.72,.28)*(.65+.35*d)+vec3(1.,.9,.6)*gloss*.4;
     }else color=vec3(.028,.018,.012)*(.45+.7*d);
     gl_FragColor=vec4(color,1.);
   }
