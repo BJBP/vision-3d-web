@@ -7,13 +7,14 @@ export const APPEARANCES = ['neutral', 'feminine', 'masculine', 'tree'];
 export const FINISHES = ['natural', 'sculpture', 'hologram'];
 const FRAGMENT = /* glsl */ `
   uniform vec3 uMagic,uSkin;uniform float uStage,uSurface,uFinish,uTime,uMotion;
-  uniform float uNeckY,uHipY,uMouthY;uniform vec3 uEye;
+  uniform float uNeckY,uHipY,uMouthY,uShowMissingParts;uniform vec3 uEye;
   varying vec3 vNormal,vWorld,vLocal,vDetail;varying float vVis;
   float hash(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
   void main(){
     // Tracking confidence must not turn a solid person into persistent stippled holes.
     float reveal=smoothstep(1.38,1.98,uStage)*uSurface;
     if(reveal<.001 || (reveal<.995 && hash(floor(gl_FragCoord.xy))>reveal))discard;
+    if(uShowMissingParts<.5 && vVis<.35)discard;
     vec3 n=normalize(vNormal);if(!gl_FrontFacing)n=-n;
     vec3 view=normalize(cameraPosition-vWorld);
     vec3 key=normalize(vec3(-.45,.68,1.2)),fill=normalize(vec3(.8,.25,.8));
@@ -83,7 +84,7 @@ const FRAGMENT = /* glsl */ `
   }
 `;
 
-async function loadModel(name, shared, scale) {
+async function loadGeometry(name) {
   const [br, jr] = await Promise.all([fetch(`./assets/human/${name}.bin`), fetch(`./assets/human/${name}.json`)]);
   if (!br.ok || !jr.ok) throw new Error(`No se pudo cargar la apariencia ${name}.`);
   const [buffer, meta] = await Promise.all([br.arrayBuffer(), jr.json()]);
@@ -104,11 +105,28 @@ async function loadModel(name, shared, scale) {
   ])
     geo.setAttribute(attr, new THREE.InterleavedBufferAttribute(data, size, off));
   geo.setIndex(new THREE.BufferAttribute(new Uint32Array(buffer, 12 + count * stride * 4, icount), 1));
+  return { geo, meta };
+}
+
+function humanGeometry(name, cache) {
+  if (!cache.has(name)) {
+    const pending = loadGeometry(name).catch(error => {
+      cache.delete(name);
+      throw error;
+    });
+    cache.set(name, pending);
+  }
+  return cache.get(name);
+}
+
+async function loadModel(name, shared, scale, cache) {
+  const { geo, meta } = await humanGeometry(name, cache);
   const bones = meta.bones,
     matrices = bones.map(() => new THREE.Matrix4()),
     visibility = Array.from({ length: Math.ceil(bones.length / 4) }, () => new THREE.Vector4());
   const uniforms = {
     ...shared,
+    uShowMissingParts: { value: 1 },
     uBones: { value: matrices },
     uBoneVis: { value: visibility },
     uEye: { value: new THREE.Vector3(...meta.eye) },
@@ -214,8 +232,10 @@ async function loadModel(name, shared, scale) {
   };
 }
 
-export async function createHumanAvatar(shared, scale, initial = 'neutral') {
-  const models = await Promise.all(APPEARANCES.map(n => loadModel(n, shared, scale)));
+export async function createHumanAvatar(shared, scale, initial = 'neutral', geometryCache) {
+  const ownsGeometry = !geometryCache;
+  geometryCache ??= new Map();
+  const models = await Promise.all(APPEARANCES.map(n => loadModel(n, shared, scale, geometryCache)));
   const group = new THREE.Group();
   models.forEach(m => group.add(m.mesh));
   let index = Math.max(0, APPEARANCES.indexOf(initial));
@@ -228,7 +248,19 @@ export async function createHumanAvatar(shared, scale, initial = 'neutral') {
   select(initial);
   return {
     mesh: group,
+    geometryCache,
     select,
+    configure({ showMissingParts = true }) {
+      models.forEach(model => (model.mesh.material.uniforms.uShowMissingParts.value = Number(showMissingParts)));
+    },
+    dispose() {
+      group.removeFromParent();
+      models.forEach(model => model.mesh.material.dispose());
+      if (ownsGeometry) {
+        geometryCache.forEach(asset => asset.then(({ geo }) => geo.dispose()));
+        geometryCache.clear();
+      }
+    },
     get appearance() {
       return APPEARANCES[index];
     },

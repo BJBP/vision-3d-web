@@ -4,3 +4,5 @@ export { DEFORM_GLSL, HAND_A, HAND_B, HEAD, JOINTS, MID_H, MID_S, NECK, buildBod
 export { APPEARANCES, FINISHES, createHumanAvatar } from './human-avatar.js';
 export { createStage } from './avatar.js';
 export { createCustomModel } from './custom-model.js';
+export { inspectModelRig } from './model-rig.js';
+export { createModelThumbnailer } from './model-thumbnail.js';

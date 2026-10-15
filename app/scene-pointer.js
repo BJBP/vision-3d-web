@@ -1,8 +1,16 @@
 // Interacción con el puntero sobre la escena: un toque dispara la reacción de las partículas una vez;
 // arrastrar y la rueda giran y acercan el modelo GLB propio (si está en modo exhibición).
-export function installScenePointer({ effects, gallery, eventStage, customModel, getModelUse }) {
+export function installScenePointer({
+  effects,
+  gallery,
+  eventStage,
+  customModel,
+  getModelUse,
+  isBlocked = () => false,
+}) {
   let scenePointer = null;
   const acceptsScenePointer = target =>
+    !isBlocked() &&
     !target.closest('dialog,.masthead,.controls,#camera-preview,input,select,textarea,a,button,[contenteditable]');
   addEventListener('pointerdown', event => {
     if (!event.isPrimary || event.button !== 0 || !acceptsScenePointer(event.target)) return;

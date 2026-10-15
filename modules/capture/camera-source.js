@@ -1,5 +1,7 @@
 // Webcam del navegador: pide permiso, captura fotogramas y los envía a capture-worker.js.
 // createCameraSource() devuelve start/stop y emite paquetes con el mismo formato que la OAK-D.
+import { captureOptions } from './capture-normalize.js';
+
 const cameraError = error =>
   new Error(
     {
@@ -53,6 +55,10 @@ export function createCameraSource({
     fpsAt = 0,
     fpsFrames = 0;
 
+  let trackingOptions = captureOptions(),
+    configurationId = 0;
+  const configurations = new Map();
+
   function setPreview(show) {
     visible = Boolean(show);
     preview.hidden = !visible || !active;
@@ -67,6 +73,11 @@ export function createCameraSource({
     clearTimeout(timer);
     cancelInit?.();
     cancelInit = null;
+    for (const { reject, timer } of configurations.values()) {
+      clearTimeout(timer);
+      reject(cancelled());
+    }
+    configurations.clear();
     worker?.terminate();
     worker = null;
     stream?.getTracks().forEach(track => track.stop());
@@ -80,15 +91,40 @@ export function createCameraSource({
     onError(cameraError(error));
   }
   async function configure(options = {}) {
+    const nextTracking = captureOptions({ ...trackingOptions, ...options });
+    const trackingChanged =
+      nextTracking.maxParticipants !== trackingOptions.maxParticipants ||
+      ['x', 'y', 'width', 'height'].some(
+        key => nextTracking.participationZone[key] !== trackingOptions.participationZone[key],
+      );
+    trackingOptions = nextTracking;
     analysisFps = Math.max(5, Math.min(30, Number(options.analysisFps) || analysisFps));
-    captureWidth = [640, 1280, 1920].includes(options.captureWidth) ? options.captureWidth : captureWidth;
+    const nextWidth = [640, 1280, 1920].includes(options.captureWidth) ? options.captureWidth : captureWidth;
+    const widthChanged = nextWidth !== captureWidth;
+    captureWidth = nextWidth;
+    const updates = [];
+    if (worker && trackingChanged)
+      updates.push(
+        new Promise((resolve, reject) => {
+          const id = ++configurationId;
+          const timeout = setTimeout(() => {
+            configurations.delete(id);
+            reject(new Error('El seguimiento tardó demasiado en actualizarse. Reinicia la cámara.'));
+          }, 60000);
+          configurations.set(id, { resolve, reject, timer: timeout });
+          worker.postMessage({ type: 'configure', id, options: trackingOptions });
+        }),
+      );
     const track = stream?.getVideoTracks()[0];
-    if (track)
-      await track.applyConstraints({
-        width: { ideal: captureWidth },
-        height: { ideal: (captureWidth * 9) / 16 },
-        frameRate: { ideal: 30 },
-      });
+    if (track && widthChanged)
+      updates.push(
+        track.applyConstraints({
+          width: { ideal: captureWidth },
+          height: { ideal: (captureWidth * 9) / 16 },
+          frameRate: { ideal: 30 },
+        }),
+      );
+    await Promise.all(updates);
   }
   function schedule(token) {
     if (token !== generation || !active) return;
@@ -178,6 +214,13 @@ export function createCameraSource({
             clearTimeout(timer);
             cancelInit = null;
             resolve();
+          } else if (data.type === 'configured') {
+            const update = configurations.get(data.id);
+            if (update) {
+              clearTimeout(update.timer);
+              configurations.delete(data.id);
+              update.resolve();
+            }
           } else if (data.type === 'error') {
             const error = new Error('No se pudo procesar la cámara: ' + data.message);
             if (active) fail(error);
@@ -197,7 +240,7 @@ export function createCameraSource({
             onPacket(data.packet);
           }
         };
-        worker.postMessage({ type: 'init' });
+        worker.postMessage({ type: 'init', options: trackingOptions });
       });
       if (token !== generation) throw cancelled();
       active = true;

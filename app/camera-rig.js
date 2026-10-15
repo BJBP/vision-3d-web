@@ -4,9 +4,10 @@ import * as THREE from 'three';
 import { MID_H } from '../modules/avatar/index.js';
 
 const MOBILE_WIDTH = 700;
-const DISTANCE = 8.6;
+const DEFAULT_DISTANCE = 8.6;
 
-export function createCameraRig({ camera, J, fitRain }) {
+// getDistance devuelve la distancia elegida en Configuración (cameraDistance); se lee en cada fotograma.
+export function createCameraRig({ camera, J, fitRain, getDistance = () => DEFAULT_DISTANCE }) {
   let viewKey = '';
 
   // centered: escena centrada (modo evento o escenario limpio); si no, deja sitio al texto lateral.
@@ -38,7 +39,8 @@ export function createCameraRig({ camera, J, fitRain }) {
       onViewChange();
     }
     const close = portrait && !mobile && present && !studioActive;
-    const eventFov = Math.max(38, THREE.MathUtils.radToDeg(2 * Math.atan(2.8 / (DISTANCE * camera.aspect))));
+    const distance = getDistance();
+    const eventFov = Math.max(38, THREE.MathUtils.radToDeg(2 * Math.atan(2.8 / (distance * camera.aspect))));
     let targetFov = close ? 29 : 48;
     if (eventActive && !close) targetFov = eventFov;
     else if (mobile) targetFov = studioActive ? 95 : 64;
@@ -46,7 +48,7 @@ export function createCameraRig({ camera, J, fitRain }) {
     camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * (reducedMotion ? 15 : 2.6)));
     const targetY = close ? 1.07 : eventActive && present ? -0.12 : present ? 0.2 : 0;
     camera.position.y += (targetY - camera.position.y) * (1 - Math.exp(-dt * 2.8));
-    const targetZ = eventActive && present ? DISTANCE + J[MID_H].z : DISTANCE;
+    const targetZ = eventActive && present ? distance + J[MID_H].z : distance;
     camera.position.z += (targetZ - camera.position.z) * (1 - Math.exp(-dt * 2));
     camera.lookAt(
       eventActive ? camera.position.x : camera.position.x * 0.5,

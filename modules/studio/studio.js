@@ -275,6 +275,18 @@ export function createStudio({ enabled = true, onChange = () => {} } = {}) {
       if (!enabled) reset();
       onChange(state());
     },
+    // Misma zona de la cámara que el cursor del resto de la escena (Configuración → editor de áreas).
+    setHandZone(zone) {
+      handPointer.setZone(zone);
+    },
+    setCursorStability(preset) {
+      handPointer.setStability(preset);
+      pointer.setStability(preset);
+    },
+    resetHandInput() {
+      handPointer.reset();
+      pointer.reset();
+    },
     ingest(pose, time, hands = []) {
       const points = handPointer.sample(pose, hands, time),
         finger = points.filter(p => p.source === 'fingers');

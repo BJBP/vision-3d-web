@@ -1,15 +1,34 @@
 // Screen coordinates are mirrored by server.py. No finger pose or identity inference.
+import { holdPointer } from './pointer-hold.js';
+import { CURSOR_STABILITY_PRESETS, smoothCursor } from './cursor-smoothing.js';
+
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export class BodyPointer {
   constructor() {
+    this.stability = 'normal';
     this.reset();
+  }
+  setStability(preset) {
+    if (preset !== 'legacy' && !Object.hasOwn(CURSOR_STABILITY_PRESETS, preset))
+      throw new Error('Elige una estabilidad de cursor válida.');
+    if (this.stability !== preset) {
+      this.stability = preset;
+      this.reset();
+    }
   }
   reset() {
     this.side = null;
     this.point = null;
+    this.hold = null;
+    this.screen = null;
     this.time = -Infinity;
     this.bimanual = null;
+  }
+  clearPoint() {
+    this.point = null;
+    this.hold = null;
+    this.screen = null;
   }
   sample(pose, time) {
     if (
@@ -25,7 +44,7 @@ export class BodyPointer {
       return { mode: 'rest' };
     }
     if (time - this.time > 250) {
-      this.point = null;
+      this.clearPoint();
       this.side = null;
       this.bimanual = null;
     }
@@ -46,30 +65,36 @@ export class BodyPointer {
     const a = raised(15),
       b = raised(16);
     if (a && b && y(15) < hy - height * 0.4 && y(16) < hy - height * 0.4 && Math.abs(x(15) - x(16)) > width * 0.55) {
-      this.point = null;
+      this.clearPoint();
       this.side = null;
       return { mode: 'transform', spread: Math.abs(x(15) - x(16)) / width, center: ((x(15) + x(16)) / 2 - cx) / width };
     }
     if (!a && !b) {
-      this.point = null;
+      this.clearPoint();
       this.side = null;
       return { mode: 'rest' };
     }
     if (this.side === null || !raised(this.side)) {
       this.side = a && b ? (y(15) < y(16) ? 15 : 16) : a ? 15 : 16;
-      this.point = null;
+      this.clearPoint();
     }
     const target = {
       x: clamp(0.5 + (x(this.side) - cx) / (width * 2.8), 0.015, 0.985),
       y: clamp((y(this.side) - sy + height * 0.65) / (height * 1.5), 0.015, 0.985),
     };
+    if (this.stability !== 'legacy') {
+      this.screen = smoothCursor(this.screen, target.x, target.y, time, dt, this.stability);
+      return { mode: 'point', x: this.screen.x, y: this.screen.y, side: this.side, held: this.screen.held };
+    }
     const k = 1 - Math.exp(-dt * 16);
     if (!this.point) this.point = target;
     else {
       this.point.x += (target.x - this.point.x) * k;
       this.point.y += (target.y - this.point.y) * k;
     }
-    return { mode: 'point', ...this.point, side: this.side };
+    // A hand kept still for a while freezes the shown point; the smoothed point keeps following the wrist.
+    this.hold = holdPointer(this.hold, this.point.x, this.point.y, time);
+    return { mode: 'point', x: this.hold.x, y: this.hold.y, side: this.side, held: this.hold.held };
   }
 }
 

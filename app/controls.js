@@ -30,12 +30,13 @@ const KEYS = {
   f: 'fullscreen',
   p: 'demo',
   m: 'surface',
+  c: 'cursor',
   r: 'motion',
   q: 'quality',
   '?': 'helpDialog',
 };
 
-// actions: { demo, surface, motion, quality, studio, view, clean, render(kind), appearance(value),
+// actions: { demo, surface, cursor, motion, quality, studio, view, clean, render(kind), appearance(value),
 // finish(value), skin(value, button), interact }. Los diálogos y clases de depuración se resuelven aquí.
 export function installControls(actions) {
   const all = {
@@ -49,6 +50,7 @@ export function installControls(actions) {
   $('demo-button').onclick = all.demo;
   $('surface-button').onclick = all.surface;
   $('motion-button').onclick = all.motion;
+  $('cursor-button').onclick = all.cursor;
   $('quality-button').onclick = all.quality;
   $('fullscreen-button').onclick = all.fullscreen;
   $('help-button').onclick = all.helpDialog;
@@ -66,6 +68,7 @@ export function installControls(actions) {
     all.interact();
     if (e.ctrlKey || e.altKey || e.metaKey || e.repeat || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     if (document.querySelector('dialog[open]')) return;
+    if (document.body.classList.contains('editing-buttons')) return;
     const action = KEYS[e.key.toLowerCase()];
     if (action) all[action]();
   });

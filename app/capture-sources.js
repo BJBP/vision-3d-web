@@ -10,21 +10,23 @@ const WEBCAM_STATUS = {
 
 const URL_SOURCES = ['webcam', 'oak', 'demo'];
 
-// Fuente inicial según la URL: ?demo=1 manda; luego ?source=webcam|oak|demo; si no, OAK-D salvo ?ws=off.
+// Explicit URL choices override the presentation default: browser webcam.
 export function initialSource(params) {
   if (params.get('demo') === '1') return 'demo';
   if (URL_SOURCES.includes(params.get('source'))) return params.get('source');
-  return params.get('ws') === 'off' ? 'off' : 'oak';
+  if (params.get('ws') === 'off') return 'off';
+  return params.get('ws') ? 'oak' : 'webcam';
 }
 
 // center: panel de configuración. getCaptureOptions() → { captureWidth, analysisFps, preview }.
-// onSwitch(source) reinicia el estado de la app al cambiar de fuente; onFail() al no poder iniciarla.
+// onSwitch(source) resets the app state; onFail(error) reports a failed start.
 export function createCaptureSources({ params, center, getCaptureOptions, onPacket, onSwitch, onFail, onPreview }) {
   let mode = initialSource(params);
   let socket = null,
     reconnectTimer = null,
     version = 0,
-    lastLiveRequest;
+    lastLiveRequest,
+    webcamRunning = false;
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   const defaultEndpoint =
     params.get('ws') === 'off' ? '' : `${scheme}://${location.hostname || 'localhost'}:${params.get('ws') || 8765}`;
@@ -38,7 +40,16 @@ export function createCaptureSources({ params, center, getCaptureOptions, onPack
       center?.status(WEBCAM_STATUS[state] || state);
     },
     onDevices: list => center?.devices(list),
-    onError: error => center?.message(error.message),
+    onError: error => {
+      center?.message(error.message);
+      // Startup failures are reported by select(); later failures need the same visible retry.
+      if (mode === 'webcam' && webcamRunning) {
+        webcamRunning = false;
+        mode = 'off';
+        center?.status('No se pudo mantener la cámara');
+        onFail(error);
+      }
+    },
     onPreview,
   });
 
@@ -80,6 +91,7 @@ export function createCaptureSources({ params, center, getCaptureOptions, onPack
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
     closeSocket();
+    webcamRunning = false;
     webcam.stop();
     mode = source;
     onSwitch(source);
@@ -94,9 +106,10 @@ export function createCaptureSources({ params, center, getCaptureOptions, onPack
     }
     try {
       if (source === 'webcam') {
-        const { captureWidth, analysisFps, preview } = getCaptureOptions();
-        await webcam.start({ deviceId, captureWidth, analysisFps });
+        const { preview, ...captureOptions } = getCaptureOptions();
+        await webcam.start({ deviceId, ...captureOptions });
         if (requested !== version) return;
+        webcamRunning = true;
         webcam.setPreview(preview);
       } else if (source === 'oak') {
         const url = new URL(endpoint);
@@ -109,7 +122,7 @@ export function createCaptureSources({ params, center, getCaptureOptions, onPack
     } catch (error) {
       if (requested !== version || error.name === 'AbortError') return;
       mode = 'off';
-      onFail();
+      onFail(error);
       if (fallback) {
         await select({ source: fallback });
         center?.message(`${error.message} Se muestra la demostración; elige la fuente en Configuración.`);
@@ -120,9 +133,13 @@ export function createCaptureSources({ params, center, getCaptureOptions, onPack
     }
   }
 
-  // Al volver de demo: la última fuente real elegida, o la OAK-D si hay servicio configurado.
+  // Return from demo to the last live source, otherwise honor the explicit URL choice.
   function liveRequest() {
-    return lastLiveRequest || (defaultEndpoint ? { source: 'oak' } : { source: 'off' });
+    if (lastLiveRequest) return lastLiveRequest;
+    const source = initialSource(params);
+    if (source !== 'demo') return { source };
+    if (params.get('ws') === 'off') return { source: 'off' };
+    return { source: params.get('ws') ? 'oak' : 'webcam' };
   }
 
   addEventListener('pagehide', () => {

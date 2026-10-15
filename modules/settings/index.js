@@ -4,3 +4,5 @@ export { PRESETS } from './settings.js';
 export { center } from './configuration.js';
 export { resourceStore } from './resources.js';
 export { reduceQuality } from './performance.js';
+export { mountAvatarManager } from './avatar-manager.js';
+export { BUTTON_CONTROLS, defaultButtonPlacement, buttonRect } from './button-layout.js';

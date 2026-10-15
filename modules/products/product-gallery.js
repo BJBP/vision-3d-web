@@ -36,6 +36,9 @@ export function createProductGallery(
       configure() {},
       click() {},
       showAvatar() {},
+      controls: () => [],
+      setEditing() {},
+      refreshControls() {},
       ingestSilhouette() {},
       ingestHands() {},
       clearPresence() {},
@@ -107,7 +110,9 @@ export function createProductGallery(
     present = false,
     rect = null,
     targets = [],
-    customAvatar = false;
+    editing = false,
+    autoReturnToMenu = false,
+    firstRender = true;
   let lastLayout = 0,
     lastAction = performance.now(),
     lastSeen = lastAction,
@@ -231,7 +236,7 @@ export function createProductGallery(
   });
   function ingestHands(hands, now, { available = active, demo = lastDemo, blocked: isBlocked = blocked } = {}) {
     ingress.push(hands, now, {
-      enabled: enabled && available && !isBlocked && !demo,
+      enabled: enabled && available && !isBlocked && !editing && !demo,
       scope: `${phase}:${selected}:${Boolean(drag)}`,
     });
   }
@@ -451,11 +456,24 @@ export function createProductGallery(
   addEventListener('resize', layout);
   return {
     configure(settings) {
-      customAvatar = !!settings.modelId;
+      autoReturnToMenu = settings.autoReturnToMenu ?? false;
       field.configure(settings);
       world.configure(settings);
     },
     click: field.click,
+    controls: () =>
+      [...root.querySelectorAll('[data-product-action]')].filter(
+        button => !button.dataset.productAction.startsWith('focus:'),
+      ),
+    setEditing(value) {
+      editing = value;
+      blocked = value;
+      if (!value) lastAction = performance.now();
+      dwell.reset();
+      orbit.cancel();
+      sync();
+    },
+    refreshControls: layout,
     showAvatar() {
       lastAction = performance.now();
       enter(items.find(item => item.type === 'avatar')?.id ?? AVATAR_ITEM.id);
@@ -479,8 +497,11 @@ export function createProductGallery(
     productVisible: () => active && (phase === 'browse' || showsModel()),
     avatarVisible: () => active && showsAvatar(),
     update({ now, dt, available, present: seen, hands, reducedMotion, demo, blocked: isBlocked = false }) {
+      const wasActive = active;
       active = enabled && available;
-      blocked = isBlocked;
+      // Asset loading must not consume the initial item's unattended display time.
+      if (active && !wasActive) lastAction = now;
+      blocked = isBlocked || editing;
       present = seen;
       root.hidden = !active;
       document.body.classList.toggle('product-mode', active && (phase === 'browse' || showsModel()));
@@ -510,15 +531,16 @@ export function createProductGallery(
       }
       if (present) lastSeen = now;
       if (
+        autoReturnToMenu &&
         phase === 'inspect' &&
         !present &&
         !drag &&
-        !(showsAvatar() && customAvatar) &&
         !viewer.playing() &&
         now - Math.max(lastSeen, lastAction) > 12000
       )
         action('menu');
       else if (
+        autoReturnToMenu &&
         phase === 'browse' &&
         browser.canGoBack() &&
         !present &&
@@ -681,6 +703,11 @@ export function createProductGallery(
     render() {
       if (!active || (phase === 'inspect' && !showsModel())) return;
       world.render(rect);
+      if (firstRender) {
+        // The first WebGL compilation can outlast the entire inactivity timeout.
+        lastAction = performance.now();
+        firstRender = false;
+      }
       if (phase === 'browse')
         for (const label of world.labels(rect)) {
           const b = root.querySelector(`[data-product-action="focus:${label.id}"]`);

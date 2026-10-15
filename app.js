@@ -6,9 +6,14 @@ import { createBodyParticles } from './app/body-particles.js';
 import { createAmbientEffects } from './app/ambient-effects.js';
 import { createClockSprite } from './app/clock-sprite.js';
 import { createPoseTracker } from './app/pose-tracker.js';
+import { createCrowdAvatars } from './app/crowd-avatars.js';
 import { createCaptureSources } from './app/capture-sources.js';
 import { createHud } from './app/hud.js';
 import { installScenePointer } from './app/scene-pointer.js';
+import { installFloatingPanels } from './app/floating-panels.js';
+import { installSceneEditor } from './app/scene-editor.js';
+import { installButtonEditor } from './app/button-editor.js';
+import { createCalibration } from './app/calibration.js';
 import { createRenderQuality } from './app/render-quality.js';
 import { createFramePacer } from './app/frame-pacing.js';
 import { installControls, toast } from './app/controls.js';
@@ -26,7 +31,14 @@ import {
   createStage,
   createCustomModel,
 } from './modules/avatar/index.js';
-import { demoPose, assessBodyFrame, HandInput } from './modules/tracking/index.js';
+import {
+  demoPose,
+  assessBodyFrame,
+  DEFAULT_HAND_ZONE,
+  HandInput,
+  createParticipants,
+  createParticipantCursorZone,
+} from './modules/tracking/index.js';
 import { createStudio } from './modules/studio/index.js';
 import { createEventStage } from './modules/event/index.js';
 import { createProductGallery, BUILT_IN_MODELS, DEFAULT_CATALOG } from './modules/products/index.js';
@@ -48,6 +60,9 @@ const eventMode = params.get('event') !== '0' && params.get('studio') !== '1';
 document.body.classList.toggle('event-mode', eventMode);
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 let options = center.values;
+// El cursor de las manos se pausa durante la calibración aunque esté activado (handCursor).
+let cursorPaused = false;
+let buttonsEditing = false;
 // URL overrides are temporary; they do not overwrite the saved profiles.
 if (['auto', 'low', 'balanced', 'high'].includes(params.get('quality'))) {
   options = {
@@ -112,7 +127,7 @@ const previewToken = params.get('preview') === '1' ? adminToken() : null;
 const localCollections = createLocalCollections();
 const localData = localCollections.read();
 const catalog = await loadCatalog({
-  api: { base: './', token: previewToken },
+  api: location.hostname.endsWith('.github.io') ? null : { base: './', token: previewToken },
   knownModels: BUILT_IN_MODELS,
   fallback: DEFAULT_CATALOG,
   requested: params.get('collection'),
@@ -137,6 +152,7 @@ installLocalAdmin({
   local: localCollections,
   resources: resourceStore,
   defaultCatalog: DEFAULT_CATALOG,
+  renderer,
 });
 scene.add(continuous.mesh);
 const customModel = await createCustomModel({
@@ -167,6 +183,20 @@ const clock = createClockSprite({ scene, color: MAGIC });
 
 // ---------- Pose: suavizado One Euro y armado del esqueleto ----------
 const tracker = createPoseTracker({ J, V, U, scale: S });
+const participants = createParticipants();
+const cursorZone = createParticipantCursorZone();
+const crowd = await createCrowdAvatars({
+  scene,
+  camera,
+  body: { geo, particles, U, N },
+  scale: S,
+  appearance,
+  geometryCache: continuous.geometryCache,
+});
+let controllerId = null;
+let trackedId = null;
+let crowdState = crowd.state(),
+  participantState = [];
 let lastPoseMsg = performance.now(),
   camOk = false,
   camFps = 0,
@@ -181,12 +211,21 @@ const sources = createCaptureSources({
     captureWidth: effectiveOptions.captureWidth,
     analysisFps: effectiveOptions.analysisFps,
     preview: options.preview,
+    maxParticipants: options.modelId ? 1 : options.maxParticipants,
+    participationZone: options.participationZone,
   }),
   onPacket: packet => consumeCapture(packet),
   onSwitch: source => {
+    $('capture-error').hidden = true;
     demo = source === 'demo';
     tracker.reset();
+    participants.reset();
+    crowd.ingest([], performance.now());
+    controllerId = null;
+    trackedId = null;
     handInput.reset();
+    cursorZone.reset();
+    studio.resetHandInput();
     gallery.clearPresence();
     tracker.lastPose = -1e9;
     lastMsg = 0;
@@ -196,7 +235,11 @@ const sources = createCaptureSources({
     $('demo-button').setAttribute('aria-pressed', String(demo));
     $('demo-button').querySelector('span').textContent = demo ? 'Salir de demo' : 'Ver demo';
   },
-  onFail: () => (camOk = false),
+  onFail: error => {
+    camOk = false;
+    $('capture-error-message').textContent = error.message || 'No se pudo iniciar la cámara. Revisa sus permisos.';
+    $('capture-error').hidden = false;
+  },
   onPreview: visible => {
     options.preview = visible;
     center?.set({ preview: visible });
@@ -213,21 +256,47 @@ function consumeCapture(d) {
     gallery.ingestSilhouette(silhouette.texture, now);
   presence = Number.isFinite(d.pres) ? d.pres : 0;
   if (camOk) {
-    const points = handInput.sample(d.pose, d.hands, now);
-    gallery.ingestHands(points, now, {
+    const people = participants.ingest(d, now);
+    crowd.ingest(people, now);
+    const controller = participants.controller(now);
+    controllerId = controller?.id ?? null;
+    const tracked = controller ?? people.find(p => p.observedAt === now && !p.ambiguous);
+    if (tracked && tracked.id !== trackedId) {
+      tracker.reset();
+      handInput.reset();
+      cursorZone.reset();
+      studio.resetHandInput();
+      gallery.ingestHands([], now);
+      trackedId = tracked.id;
+    }
+    const accepted = tracked
+      ? tracker.ingest(tracked.pose, tracked.hands, clamp((now - lastPoseMsg) / 1000, 0.01, 0.2))
+      : false;
+    const reliableControl = !!controller && accepted && assessBodyFrame(controller.pose).ok;
+    const pose = reliableControl ? controller.pose : null;
+    const measuredHands = reliableControl ? controller.hands : [];
+    if (options.participantCursor)
+      applyHandZone(cursorZone.sample(pose, handZoneOf(options), now, options.cursorStability));
+    // Sin cursor (Configuración → Cámara) las manos no llegan a la galería ni al estudio; el avatar las sigue igual.
+    const points = handInput.sample(pose, measuredHands, now),
+      cursor = cursorActive();
+    gallery.ingestHands(cursor ? points : [], now, {
       available: eventMode && !studio.state().enabled,
       demo,
       blocked: guideHidden || !!document.querySelector('dialog[open]'),
     });
-    studio.ingest(d.pose, now, d.hands);
-    const assessment = assessBodyFrame(d.pose);
-    tracker.issue = assessment.reason;
-    if (assessment.ok) {
-      tracker.ingest(d.pose, d.hands, clamp((now - lastPoseMsg) / 1000, 0.01, 0.2));
-      tracker.issue = 'tracked';
+    studio.ingest(cursor ? pose : null, now, cursor ? measuredHands : []);
+    const assessment = assessBodyFrame(tracked?.pose);
+    tracker.issue = tracked ? 'uncertain' : 'searching';
+    if (accepted) {
+      tracker.issue = assessment.ok ? 'tracked' : 'partial';
       lastPoseMsg = now;
     }
   } else {
+    participants.reset();
+    crowd.ingest([], now);
+    controllerId = null;
+    trackedId = null;
     handInput.reset();
     gallery.ingestHands([], now);
     gallery.clearPresence();
@@ -309,7 +378,24 @@ function cycleQuality() {
 }
 function applyOptions(next) {
   const previousModel = options.modelId;
+  if (options.cursorStability !== next.cursorStability || options.participantCursor !== next.participantCursor) {
+    cursorZone.reset();
+    handInput.reset();
+    studio.resetHandInput();
+  }
   options = { ...next };
+  handInput.setStability(options.cursorStability);
+  studio.setCursorStability(options.cursorStability);
+  tracker.configure(options);
+  continuous.configure(options);
+  participants.configure(options);
+  crowd.configure(options);
+  void webcam
+    .configure({
+      maxParticipants: options.modelId ? 1 : options.maxParticipants,
+      participationZone: options.participationZone,
+    })
+    .catch(error => center.message(error.message));
   quality = options.quality;
   surfaceOn = options.surface;
   reducedMotion = options.reducedMotion;
@@ -332,12 +418,37 @@ function applyOptions(next) {
   syncMotion();
   applyQuality();
   webcam.setPreview(options.preview);
+  applyHandZone(handZoneOf(options));
+  $('cursor-button').setAttribute('aria-pressed', String(options.handCursor));
 }
+function cursorActive() {
+  return options.handCursor && !cursorPaused && !buttonsEditing;
+}
+function toggleCursor() {
+  center.save({ handCursor: !options.handCursor });
+  toast(
+    options.handCursor ? 'Cursor de las manos activado.' : 'Cursor de las manos desactivado: el avatar te sigue igual.',
+  );
+}
+// Zona de la cámara que se usa como pantalla para el cursor (Configuración → editor de áreas).
+function handZoneOf(values) {
+  return { x: values.handZoneX, y: values.handZoneY, width: values.handZoneWidth, height: values.handZoneHeight };
+}
+function applyHandZone(zone) {
+  handInput.setZone(zone);
+  studio.setHandZone(zone);
+}
+const calibration = createCalibration({
+  calibrate: () => customModel.calibrate(),
+  setCursorPaused: value => (cursorPaused = value),
+  announce: toast,
+  closeDialogs: () => document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close()),
+});
 center.connect({
   onChange: applyOptions,
   onSource: request => void sources.select(request),
   onPreview: visible => webcam.setPreview(visible),
-  onCalibrate: () => customModel.calibrate(),
+  onCalibrate: () => calibration.run(),
   onModelApply: () => gallery.showAvatar?.(),
   onVideoPlay: () => {
     center.set({ videoPaused: false });
@@ -352,8 +463,9 @@ center.connect({
 });
 if (sources.defaultEndpoint) document.getElementById('settings-endpoint').value = sources.defaultEndpoint;
 applyOptions(center.values);
-if (options.modelId) gallery.showAvatar?.();
-void sources.select({ source: sources.mode, fallback: sources.mode === 'webcam' ? 'demo' : undefined });
+if (!params.has('product') && !params.has('collection') && options.initialView === 'avatar') gallery.showAvatar();
+$('capture-retry').onclick = () => void sources.select(sources.liveRequest());
+void sources.select({ source: sources.mode });
 function toggleStudio() {
   studio.toggle();
   $('studio-button').setAttribute('aria-pressed', String(studio.state().enabled));
@@ -423,6 +535,7 @@ function interact() {
 installControls({
   demo: () => setDemo(!demo),
   surface: toggleSurface,
+  cursor: toggleCursor,
   motion: toggleMotion,
   quality: cycleQuality,
   studio: toggleStudio,
@@ -443,7 +556,7 @@ $('surface-button').textContent = surfaceOn ? 'Humano' : 'Aura astral';
 syncMotion();
 applyQuality();
 const hud = createHud();
-const cameraRig = createCameraRig({ camera, J, fitRain });
+const cameraRig = createCameraRig({ camera, J, fitRain, getDistance: () => options.cameraDistance });
 const watch = createWatchGesture({ clock, J, V, scale: S });
 let lastHUD = 0;
 function fitView() {
@@ -504,21 +617,26 @@ function frame() {
   }
 
   const present = now - tracker.lastPose < 1000;
+  const people = participants.current(now);
+  const observedPresence = people.some(p => now - p.observedAt < 1000);
+  crowd.ingest(people, now);
+  const crowdActive =
+    !demo && !options.modelId && options.maxParticipants > 1 && people.length > 0 && gallery.avatarVisible();
   const hands = handInput.current(now),
     dialogOpen = !!document.querySelector('dialog[open]');
   gallery.update({
     now,
     dt: Math.min(rawDt, 0.15),
     available: eventMode && !studio.state().enabled,
-    present: !demo && (present || hands.length > 0),
-    hands: demo ? [] : hands,
+    present: !demo && (present || observedPresence),
+    hands: demo || !cursorActive() ? [] : hands,
     reducedMotion,
     demo,
     blocked: guideHidden || dialogOpen,
   });
   const productMode = gallery.productVisible();
   const avatarPreview = gallery.state().active && gallery.avatarVisible() && !present && !demo;
-  if (avatarPreview) {
+  if (avatarPreview && people.length === 0) {
     // A static preview is an exhibit asset, not a detected visitor. Never update
     // lastPose, tracking confidence/state, or studio input from this preview.
     tracker.setNeutral(demoPose(0, true));
@@ -586,8 +704,31 @@ function frame() {
 
   // la cámara sigue suavemente al avatar
   const eventActive = eventMode && !studio.state().enabled;
-  cameraRig.follow(dt, present, eventActive, studio.state().active, portrait, reducedMotion, fitView);
+  cameraRig.follow(dt, present && !crowdActive, eventActive, studio.state().active, portrait, reducedMotion, fitView);
   camera.updateMatrixWorld();
+  const menuRect = crowdActive && people.length === 2 ? $('product-menu')?.getBoundingClientRect() : null;
+  crowd.update({
+    now,
+    dt,
+    active: crowdActive,
+    surfaceOn,
+    appearance,
+    options: effectiveOptions,
+    particleDensity: effectiveOptions.particleDensity,
+    reservedLeft:
+      menuRect && menuRect.left < innerWidth * 0.15 && menuRect.right < innerWidth * 0.45
+        ? (menuRect.right + 12) / innerWidth
+        : 0,
+  });
+  if (crowdActive) {
+    particles.visible = false;
+    continuous.mesh.visible = false;
+    floor.visible = false;
+    stagePlatform.group.visible = false;
+  } else {
+    particles.visible = effectiveOptions.particles;
+    stagePlatform.group.visible = true;
+  }
   eventStage.update({
     now,
     dt: Math.min(rawDt, 0.1),
@@ -608,6 +749,14 @@ function frame() {
   // HUD. No camera frame is uploaded; scene labels distinguish live capture from demo.
   if (now - lastHUD > 180) {
     lastHUD = now;
+    crowdState = crowd.state();
+    participantState = people.map(p => ({
+      id: p.id,
+      slot: p.slot,
+      observedAt: p.observedAt,
+      ambiguous: p.ambiguous,
+      hands: p.hands.length,
+    }));
     const capture = webcam.metrics();
     const webcamSource = sources.mode === 'webcam';
     center.metrics({
@@ -681,6 +830,9 @@ function frame() {
     studio: studio.state(),
     event: eventStage.state(),
     gallery: gallery.state(),
+    crowd: crowdState,
+    participants: participantState,
+    controllerId,
     particleEffects: effects.state(),
     background: backgrounds.state(),
     customModel: { ...custom, visible: customModel.mesh.visible },
@@ -698,11 +850,45 @@ addEventListener('resize', () => {
 });
 
 // A tap reacts once; dragging remains available for objects and never bursts.
-installScenePointer({ effects, gallery, eventStage, customModel, getModelUse: () => options.modelUse });
+const buttonEditor = installButtonEditor({ center, gallery, onEditing: value => (buttonsEditing = value) });
+installScenePointer({
+  effects,
+  gallery,
+  eventStage,
+  customModel,
+  getModelUse: () => options.modelUse,
+  isBlocked: () => buttonEditor.editing,
+});
+installSceneEditor({
+  center,
+  handInput,
+  onOpen: () => {
+    if (options.participantCursor) center.save({ participantCursor: false });
+  },
+  defaults: { zone: DEFAULT_HAND_ZONE, distance: 8.6 },
+  // Vista previa mientras se arrastra; al soltar, center.save guarda y applyOptions lo vuelve a aplicar.
+  applyLive: ({ zone, distance }) => {
+    if (zone) applyHandZone(zone);
+    if (distance) options.cameraDistance = distance;
+  },
+});
+installSceneEditor({
+  center,
+  handInput,
+  participation: true,
+  defaults: { zone: { x: 0, y: 0, width: 1, height: 1 }, distance: 8.6 },
+  applyLive: ({ zone }) => {
+    if (!zone) return;
+    participants.configure({ ...options, participationZone: zone });
+    void webcam.configure({ participationZone: zone }).catch(error => center.message(error.message));
+  },
+});
+installFloatingPanels();
 addEventListener('pagehide', event => {
   if (!event.persisted) {
     backgrounds.dispose();
     customModel.dispose();
+    crowd.dispose();
   }
 });
 

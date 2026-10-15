@@ -1,8 +1,12 @@
 // Modelo de configuración: valores por defecto (DEFAULTS), presets, validación y
 // persistencia en localStorage (createSettings, loadSettings).
 import { RESOURCE_LABELS, resourceStore } from './resources.js';
+import { downloadBlob as download } from './download.js';
+import { validButtonLayout } from './button-layout.js';
+import { CURSOR_PROFILES, matchingCursorProfile } from './cursor-profiles.js';
 export const STORAGE_KEY = 'vision3d.beta.settings.v2';
 export const LEGACY_STORAGE_KEY = 'vision3d.beta.settings.v1';
+export const PRE_CURSOR_PROFILES_KEY = `${STORAGE_KEY}.before-cursor-profiles`;
 export const RIG_ROLES = Object.freeze([
   'hips',
   'spine',
@@ -23,6 +27,16 @@ export const RIG_ROLES = Object.freeze([
   'rightFoot',
 ]);
 export const DEFAULTS = Object.freeze({
+  initialView: 'avatar',
+  autoReturnToMenu: false,
+  maxParticipants: 2,
+  controllerSlot: 0,
+  showMissingParts: true,
+  participantCursor: false,
+  cursorStability: 'smooth',
+  cursorProfile: 'stable',
+  participationZone: { x: 0, y: 0, width: 1, height: 1 },
+  buttonLayout: {},
   background: 'solid',
   bgColor: '#050b0c',
   bgEnd: '#12352a',
@@ -47,6 +61,15 @@ export const DEFAULTS = Object.freeze({
   dynamicResolution: true,
   fpsLimit: 0,
   preview: true,
+  // Las manos mueven el cursor (galería, evento, estudio). Apagado, el avatar sigue el cuerpo y las manos igual.
+  handCursor: true,
+  // Zona de la imagen de la cámara (0–1) que ocupa toda la pantalla para el cursor; se edita en el editor de áreas.
+  handZoneX: 0.12,
+  handZoneY: 0.08,
+  handZoneWidth: 0.76,
+  handZoneHeight: 0.84,
+  // Distancia de la cámara de la escena al escenario, en unidades de escena.
+  cameraDistance: 8.6,
   particleShape: 'circle',
   particleSize: 1,
   particleLayout: 'auto',
@@ -79,6 +102,9 @@ export const PRESETS = Object.freeze({
   high: { renderScale: 1, particleDensity: 1, bloom: true, trails: true, captureWidth: 1280, analysisFps: 20 },
 });
 const enums = {
+  cursorProfile: [...Object.keys(CURSOR_PROFILES), 'custom'],
+  cursorStability: ['smooth', 'normal', 'fast', 'legacy'],
+  initialView: ['avatar', 'collection'],
   background: ['solid', 'gradient', 'video'],
   appearance: ['neutral', 'feminine', 'masculine', 'tree'],
   finish: ['natural', 'sculpture', 'hologram'],
@@ -104,6 +130,11 @@ const bounds = {
   videoDim: [0, 1],
   modelScale: [0.2, 3],
   modelYaw: [-180, 180],
+  handZoneX: [0, 0.7],
+  handZoneY: [0, 0.7],
+  handZoneWidth: [0.3, 1],
+  handZoneHeight: [0.3, 1],
+  cameraDistance: [5, 14],
 };
 const hex = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const safeText = value => typeof value === 'string' && value.length <= 200 && !/[\u0000-\u001f]/.test(value);
@@ -114,8 +145,23 @@ export function validateSettings(value) {
     if (!Object.hasOwn(DEFAULTS, key)) throw Error(`Opción desconocida: ${key}.`);
     let valid;
     if (enums[key]) valid = enums[key].includes(v);
+    else if (key === 'maxParticipants' || key === 'controllerSlot')
+      valid = Number.isInteger(v) && v >= (key === 'maxParticipants' ? 1 : 0) && v <= 4;
+    else if (key === 'participationZone')
+      valid =
+        v &&
+        !Array.isArray(v) &&
+        Object.keys(v).length === 4 &&
+        ['x', 'y', 'width', 'height'].every(
+          k => typeof v[k] === 'number' && Number.isFinite(v[k]) && v[k] >= 0 && v[k] <= 1,
+        ) &&
+        v.width >= 0.3 &&
+        v.height >= 0.3 &&
+        v.x + v.width <= 1.000001 &&
+        v.y + v.height <= 1.000001;
     else if (bounds[key])
       valid = typeof v === 'number' && Number.isFinite(v) && v >= bounds[key][0] && v <= bounds[key][1];
+    else if (key === 'buttonLayout') valid = validButtonLayout(v);
     else if (key === 'captureWidth') valid = [640, 1280, 1920].includes(v);
     else if (key === 'fpsLimit') valid = [0, 30, 60].includes(v);
     else if (key === 'particlePalette') valid = Array.isArray(v) && v.length >= 2 && v.length <= 8 && v.every(hex);
@@ -143,6 +189,15 @@ export function validateSettings(value) {
     if (!valid) throw Error(`Valor inválido: ${key}.`);
     result[key] = structuredClone(v);
   }
+  const EDGE = 1.0001;
+  if (
+    !Object.hasOwn(value, 'participantCursor') &&
+    ['handZoneX', 'handZoneY', 'handZoneWidth', 'handZoneHeight'].some(key => result[key] !== DEFAULTS[key])
+  )
+    result.participantCursor = false;
+  if (result.handZoneX + result.handZoneWidth > EDGE || result.handZoneY + result.handZoneHeight > EDGE)
+    throw Error('La zona de las manos debe quedar dentro de la imagen de la cámara.');
+  result.cursorProfile = matchingCursorProfile(result);
   return result;
 }
 export function validateStore(value) {
@@ -164,7 +219,11 @@ export function validateStore(value) {
     ids.add(p.id);
     return { id: p.id, name: p.name.trim(), settings: validateSettings(p.settings) };
   });
-  return { version: 2, current: validateSettings(value.current), profiles };
+  const previous = validateSettings(value.current);
+  const current = Object.hasOwn(value.current, 'cursorProfile')
+    ? previous
+    : validateSettings({ ...previous, ...CURSOR_PROFILES.stable.settings });
+  return { version: 2, current, profiles };
 }
 function readStored(storage) {
   const raw = storage?.getItem(STORAGE_KEY) ?? storage?.getItem(LEGACY_STORAGE_KEY);
@@ -195,6 +254,9 @@ export function createSettings({
   let current = validateSettings(initial),
     profiles = [],
     resources = [];
+  // Paneles montados desde fuera (p. ej. el administrador de avatares) que se redibujan con cada cambio.
+  const watchers = [];
+  const notify = () => watchers.forEach(watcher => watcher(structuredClone(current), resources));
   let modelDetails = { animations: [], bones: [], mapping: {}, compatible: false, status: '' };
   let storedError = '',
     storageSnapshot = null;
@@ -204,9 +266,10 @@ export function createSettings({
       data = raw ? validateStore(JSON.parse(raw)) : null;
     if (data) {
       profiles = data.profiles;
-      if (storageSnapshot === null) {
+      if (storageSnapshot === null || !Object.hasOwn(JSON.parse(raw).current, 'cursorProfile')) {
         if (localStorage.getItem(STORAGE_KEY) !== storageSnapshot)
           throw Error('Otra pestaña cambió los perfiles. Recarga antes de guardar.');
+        if (localStorage.getItem(PRE_CURSOR_PROFILES_KEY) === null) localStorage.setItem(PRE_CURSOR_PROFILES_KEY, raw);
         const migrated = JSON.stringify(data);
         localStorage.setItem(STORAGE_KEY, migrated);
         storageSnapshot = migrated;
@@ -242,8 +305,18 @@ export function createSettings({
     `<label class="settings-row settings-range"><span>${label} <output data-output="${key}"></output></span><input type="range" min="${min}" max="${max}" step="${step}" data-setting="${key}"></label>`;
   dialog.innerHTML = `<header class="settings-header"><div><h2 id="settings-title">Configura tu escena</h2><p>Hardtech · Visión 3D beta</p></div><button type="button" data-action="close" aria-label="Cerrar configuración">×</button></header>
     <label class="settings-mobile-nav">Categoría<select id="settings-category">${categories.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><div class="settings-tabs" role="tablist" aria-label="Configuración">${categories.map(([id, label], i) => `<button type="button" role="tab" id="settings-tab-${id}" aria-controls="settings-${id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${label}</button>`).join('')}</div>
-    <section role="tabpanel" id="settings-camera" aria-labelledby="settings-tab-camera"><label class="settings-row"><span>Fuente</span><select id="settings-source"><option value="demo">Demostración</option><option value="webcam">Cámara del navegador</option><option value="oak">OAK-D</option></select></label><label class="settings-row" id="settings-device-row" hidden><span>Dispositivo</span><select id="settings-device"><option value="">Cámara predeterminada</option></select></label><label class="settings-row" id="settings-endpoint-row" hidden><span>Servicio OAK-D</span><input type="url" id="settings-endpoint" placeholder="wss://servidor/cámara"></label><div class="settings-actions"><button type="button" data-action="start">Iniciar</button><button type="button" data-action="stop">Detener</button></div><p id="settings-source-status" role="status">Fuente detenida</p>${check('preview', 'Mostrar vista previa')}<p class="settings-help">La cámara del navegador sigue cuerpo y manos sin medir profundidad física. El vídeo se procesa en tu dispositivo. OAK-D necesita su servicio conectado y no tiene vista previa en esta beta.</p></section>
+    <section role="tabpanel" id="settings-camera" aria-labelledby="settings-tab-camera"><label class="settings-row"><span>Fuente</span><select id="settings-source"><option value="demo">Demostración</option><option value="webcam">Cámara del navegador</option><option value="oak">OAK-D</option></select></label><label class="settings-row" id="settings-device-row" hidden><span>Dispositivo</span><select id="settings-device"><option value="">Cámara predeterminada</option></select></label><label class="settings-row" id="settings-endpoint-row" hidden><span>Servicio OAK-D</span><input type="url" id="settings-endpoint" placeholder="wss://servidor/cámara"></label><div class="settings-actions"><button type="button" data-action="start">Iniciar</button><button type="button" data-action="stop">Detener</button></div><p id="settings-source-status" role="status">Fuente detenida</p>${check('preview', 'Mostrar vista previa')}${check('handCursor', 'Usar las manos como cursor')}<p class="settings-help">Sin cursor, el avatar te sigue igual pero las manos no seleccionan ni mueven nada.</p><p class="settings-help">La cámara del navegador sigue cuerpo y manos sin medir profundidad física. El vídeo se procesa en tu dispositivo. OAK-D necesita su servicio conectado y no tiene vista previa en esta beta.</p></section>
     <section role="tabpanel" id="settings-look" aria-labelledby="settings-tab-look" hidden>
+      ${group(
+        'Inicio de presentación',
+        select('initialView', 'Vista inicial', [
+          ['avatar', 'Avatar'],
+          ['collection', 'Colección'],
+        ]) +
+          check('autoReturnToMenu', 'Volver al menú si no se detecta a nadie') +
+          '<p class="settings-help">Desactívalo para mantener el Avatar o producto visible. Activado: vuelve al menú tras 12 segundos sin detección ni interacción.</p>',
+        true,
+      )}
       ${group(
         'Fondo',
         select('background', 'Tipo de fondo', [
@@ -382,10 +455,46 @@ export function createSettings({
   [...dialog.querySelectorAll('.settings-group')].find(
     group => group.querySelector('summary').textContent === 'Modelo personalizado',
   ).id = 'settings-model-group';
+  dialog.querySelector('#settings-camera').insertAdjacentHTML(
+    'beforeend',
+    group(
+      'Participantes',
+      select('maxParticipants', 'Máximo de avatares', [
+        [1, '1'],
+        [2, '2'],
+        [3, '3'],
+        [4, '4'],
+      ]) +
+        select('controllerSlot', 'Quién controla los botones', [
+          [0, 'Automático: primer participante'],
+          [1, 'Participante 1'],
+          [2, 'Participante 2'],
+          [3, 'Participante 3'],
+          [4, 'Participante 4'],
+        ]) +
+        check('showMissingParts', 'Mostrar partes sin detección') +
+        check('participantCursor', 'Cursor centrado en quien controla') +
+        select('cursorProfile', 'Perfil de control', [
+          ...Object.entries(CURSOR_PROFILES).map(([id, profile]) => [id, profile.label]),
+          ['custom', 'Personalizado'],
+        ]) +
+        '<p class="settings-help">Estable usa un área fija y suavizado Suave. Clásico se acerca al cursor de GitHub Pages. Los perfiles ajustan solo el cursor y restablecen su área; conservan el número de avatares y la apariencia. Modifica los ajustes o guarda tu propia configuración en Perfiles.</p>' +
+        select('cursorStability', 'Estabilidad del cursor', [
+          ['normal', 'Equilibrado'],
+          ['smooth', 'Suave'],
+          ['fast', 'Rápido'],
+          ['legacy', 'Anterior'],
+        ]) +
+        '<p class="settings-help">Reduce el temblor sin dificultar movimientos rápidos. Suave prioriza estabilidad; Rápido responde antes. Anterior recupera el procesamiento previo. Mantén la mano quieta dos segundos para fijar el cursor; muévela claramente para soltarlo.</p>' +
+        '<p class="settings-help">Las partes ausentes conservan brevemente su postura y vuelven suavemente a una posición neutra. Solo las manos detectadas del controlador activan botones. Los GLB propios usan un participante. Marca una zona de participación y deja el público fuera.</p>',
+      true,
+    ),
+  );
   const q = s => dialog.querySelector(s),
     message = text => {
       q('.settings-message').textContent = text;
     };
+  q('[data-setting="cursorProfile"] option[value="custom"]').disabled = true;
   const sync = () => {
     for (const el of dialog.querySelectorAll('[data-setting]')) {
       const v = current[el.dataset.setting];
@@ -396,6 +505,7 @@ export function createSettings({
     }
     syncRig();
     syncPalette();
+    notify();
   };
   const profileOptions = (selected = '') => {
     const el = q('#settings-profile');
@@ -468,6 +578,8 @@ export function createSettings({
                 ? Number(el.value)
                 : el.value;
         let next = { ...current, [key]: value };
+        if (key === 'cursorProfile' && Object.hasOwn(CURSOR_PROFILES, value))
+          Object.assign(next, CURSOR_PROFILES[value].settings);
         if (key === 'modelId' && value !== current.modelId) {
           next.modelRig = {};
           next.modelAnimation = '';
@@ -674,14 +786,6 @@ export function createSettings({
         'Este recurso está utilizado por la escena o un perfil. Cambia esas referencias antes de eliminarlo.',
       );
   }
-  function download(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
   function resourceSelection() {
     const entry = resources.find(item => item.id === q('#settings-resource').value);
     q('#settings-resource-name').value = entry?.name ?? '';
@@ -711,6 +815,7 @@ export function createSettings({
     el.value = selected;
     populateResourceOptions();
     resourceSelection();
+    notify();
   }
   q('#settings-resource').onchange = resourceSelection;
   for (const input of dialog.querySelectorAll('[data-resource-upload]'))
@@ -895,5 +1000,32 @@ export function createSettings({
     panel: id => q(`#settings-${id}`),
     refreshResources: () =>
       refreshResources().catch(error => message(`Biblioteca local no disponible. ${error.message}`)),
+    // Guarda cambios hechos fuera del panel (p. ej. el editor de áreas sobre la escena), igual que un control propio.
+    save(values) {
+      change({ ...current, ...values });
+    },
+    // Administrador de avatares: recibe la escena y la biblioteca en cada cambio.
+    watch(watcher) {
+      watchers.push(watcher);
+      watcher(structuredClone(current), resources);
+    },
+    // Cambia el avatar como el resto del panel: integrado ({ appearance }) o GLB de la biblioteca ({ modelId }).
+    async useAvatar({ appearance, modelId = '' }) {
+      change({
+        ...current,
+        modelId,
+        ...(modelId ? { particleLayout: 'auto' } : { surface: true, appearance }),
+        ...(modelId !== current.modelId ? { modelRig: {}, modelAnimation: '' } : {}),
+      });
+      if (modelId) await onModelApply();
+    },
+    resourceInUse(id) {
+      try {
+        assertResourceUnused(id);
+        return false;
+      } catch {
+        return true;
+      }
+    },
   };
 }

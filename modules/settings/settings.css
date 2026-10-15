@@ -460,3 +460,61 @@ dialog.settings-dialog {
   color: #84edbd;
   padding: 0 6px;
 }
+/* Administrador de avatares (Apariencia): miniatura, nombre y acciones por fila. */
+.avatar-manager {
+  border-bottom: 1px solid #345849;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+}
+.avatar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.avatar-row {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #a7d4bf16;
+}
+.avatar-row.is-active strong {
+  color: #84edbd;
+}
+.avatar-row small {
+  display: block;
+  color: #a6bfb4;
+  font-size: 11px;
+  margin-top: 3px;
+}
+.avatar-thumb {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid #345849;
+  border-radius: 4px;
+  background: #11251f center / contain no-repeat;
+  color: #8daba1;
+  font-size: 18px;
+}
+.avatar-tools {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.avatar-tools button[aria-pressed='true'] {
+  border-color: #84edbd;
+  color: #84edbd;
+}
+.avatar-manager .settings-import {
+  display: inline-flex;
+  margin-top: 12px;
+}
+.avatar-manager-status {
+  color: #f1c89c;
+  font-size: 12px;
+  min-height: 1.6em;
+}

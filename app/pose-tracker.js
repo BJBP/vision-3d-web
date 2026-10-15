@@ -2,7 +2,7 @@
 // calcula articulaciones virtuales (cabeza, cuello, centros). Escribe en target/vis; follow() lleva J/V.
 import * as THREE from 'three';
 import { HAND_A, HAND_B, MID_S, MID_H, HEAD, NECK, JOINTS } from '../modules/avatar/index.js';
-import { OneEuro, validPose, validHand } from '../modules/tracking/index.js';
+import { OneEuro, validPose, validHand, createPoseStability } from '../modules/tracking/index.js';
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -14,10 +14,14 @@ export function createPoseTracker({ J, V, U, scale: S }) {
   const handSeen = [-1e9, -1e9];
   const handFilters = Array.from({ length: 126 }, () => new OneEuro(2.1, 0.4));
   const tmp = new THREE.Vector3(),
-    tmp2 = new THREE.Vector3();
+    tmp2 = new THREE.Vector3(),
+    fingerDirection = new THREE.Vector3(),
+    thumbDirection = new THREE.Vector3();
   // Estado leído por app.js: última pose aceptada, distancia al torso (OAK-D) y motivo de seguimiento.
   const state = { lastPose: -1e9, torsoDist: null, issue: 'searching' };
-  let poseCount = 0;
+  const stability = createPoseStability();
+  const root = new THREE.Vector3();
+  const accepted = Array(33).fill(false);
 
   function reset() {
     [...filt, ...offF, ...handFilters].forEach(f => f.reset());
@@ -25,37 +29,35 @@ export function createPoseTracker({ J, V, U, scale: S }) {
     vis.fill(0);
     state.torsoDist = null;
     state.issue = 'searching';
-    poseCount = 0;
+    stability.reset();
+    accepted.fill(false);
+    root.set(0, 0, 0);
+    state.lastPose = -1e9;
   }
 
   // MediaPipe: x a la derecha de la imagen, y hacia abajo, z negativo hacia la cámara → escena espejada
   const conv = (arr, k, out) => out.set(-arr[k] * S, -arr[k + 1] * S, -arr[k + 2] * S);
 
   function ingestPose(pose, hands, dt) {
-    const { w, i: img, v } = pose;
-    if (!validPose(pose)) return;
-    if (performance.now() - state.lastPose > 1500) reset();
-    poseCount++;
-    // posición global: horizontal y vertical desde la imagen, profundidad real desde la OAK-D
-    const hx = (img[46] + img[48]) / 2,
-      hy = (img[47] + img[49]) / 2;
-    if (Number.isFinite(pose.d) && pose.d > 0.2 && pose.d < 8) state.torsoDist = pose.d;
-    const ox = offF[0].filter((hx - 0.5) * 7.5, dt);
-    const oy = offF[1].filter((0.55 - hy) * 6.0 + 0.1, dt);
-    const oz = offF[2].filter(state.torsoDist ? clamp((2.6 - state.torsoDist) * 1.3, -1.5, 1.8) : 0, dt);
+    if (!validPose(pose)) return false;
+    const { i: img } = pose;
+    const now = performance.now();
+    const result = stability.ingest(pose, now);
+    if (!result.reliable) return false;
+    const stable = stability.sample(now);
+    if (result.anchored && Number.isFinite(pose.d) && pose.d > 0.2 && pose.d < 8) state.torsoDist = pose.d;
+    root.set(...stable.root.map((value, axis) => offF[axis].filter(value, dt)));
     for (let j = 0; j < 33; j++) {
-      const confidence = v[j] ?? 0;
-      vis[j] += (confidence - vis[j]) * (1 - Math.exp(-dt * 12));
-      if (confidence < 0.35 && poseCount > 1) continue;
-      conv(w, j * 3, tmp);
+      accepted[j] = result.accepted[j];
+      if (!accepted[j]) continue;
+      conv(stable.w, j * 3, tmp);
       target[j].set(
-        filt[j * 3].filter(tmp.x + ox, dt),
-        filt[j * 3 + 1].filter(tmp.y + oy, dt),
-        filt[j * 3 + 2].filter(tmp.z + oz, dt),
+        filt[j * 3].filter(tmp.x, dt) + root.x,
+        filt[j * 3 + 1].filter(tmp.y, dt) + root.y,
+        filt[j * 3 + 2].filter(tmp.z, dt) + root.z,
       );
     }
     // manos: cada mano detectada se une a la muñeca de la pose más cercana en la imagen
-    const now = performance.now();
     const assigned = new Set();
     for (const h of Array.isArray(hands) ? hands : []) {
       if (!validHand(h)) continue;
@@ -63,7 +65,7 @@ export function createPoseTracker({ J, V, U, scale: S }) {
         dB = Math.hypot(h.lm[0] - img[32], h.lm[1] - img[33]);
       if (Math.min(dA, dB) > 0.12) continue;
       const side = dA < dB ? 0 : 1;
-      if (assigned.has(side)) continue;
+      if (assigned.has(side) || !accepted[side ? 16 : 15]) continue;
       assigned.add(side);
       if (now - handSeen[side] > 300) handFilters.slice(side * 63, side * 63 + 63).forEach(f => f.reset());
       const wrist = target[side ? 16 : 15],
@@ -91,6 +93,7 @@ export function createPoseTracker({ J, V, U, scale: S }) {
     }
     for (const side of [0, 1]) for (let j = 0; j < 21; j++) vis[(side ? HAND_B : HAND_A) + j] = vis[side ? 16 : 15];
     state.lastPose = now;
+    return true;
   }
 
   // sin detección de dedos: mano aproximada con los puntos de muñeca, índice, meñique y pulgar de la pose
@@ -101,16 +104,16 @@ export function createPoseTracker({ J, V, U, scale: S }) {
       I = target[i],
       T = target[t],
       base = side ? HAND_B : HAND_A;
-    const f = new THREE.Vector3().copy(I).add(P).multiplyScalar(0.5).sub(W).normalize();
+    const f = fingerDirection.copy(I).add(P).multiplyScalar(0.5).sub(W).normalize();
     target[base].copy(W);
-    const knuckles = { 5: I, 9: I.clone().lerp(P, 0.33), 13: I.clone().lerp(P, 0.66), 17: P };
-    for (const k of [5, 9, 13, 17]) {
-      target[base + k].copy(knuckles[k]);
+    for (let finger = 0; finger < 4; finger++) {
+      const k = 5 + finger * 4;
+      target[base + k].copy(I).lerp(P, finger / 3);
       const len = (k === 9 ? 0.034 : k === 17 ? 0.024 : 0.03) * S;
       for (let s = 1; s <= 3; s++)
         target[base + k + s].copy(target[base + k + s - 1]).addScaledVector(f, len * (1.1 - s * 0.15));
     }
-    const td = new THREE.Vector3().copy(T).sub(W);
+    const td = thumbDirection.copy(T).sub(W);
     target[base + 1].copy(W).addScaledVector(td, 0.35);
     target[base + 2].copy(W).addScaledVector(td, 0.7);
     target[base + 3].copy(T);
@@ -137,6 +140,8 @@ export function createPoseTracker({ J, V, U, scale: S }) {
 
   // Vista previa estática (sin visitante): coloca una pose neutra sin tocar lastPose ni el estado.
   function setNeutral(pose) {
+    stability.setNeutral(pose);
+    root.set(0, 0, 0);
     for (let j = 0; j < 33; j++) {
       conv(pose.w, j * 3, target[j]);
       vis[j] = 0.99;
@@ -147,12 +152,32 @@ export function createPoseTracker({ J, V, U, scale: S }) {
   }
 
   // El esqueleto visible (J, V) se interpola hacia el destino filtrado entre mensajes de la cámara.
-  function follow(k) {
+  function follow(k, now = performance.now()) {
+    const stable = stability.sample(now);
+    for (let j = 0; j < 33; j++) {
+      if (!accepted[j] || now - state.lastPose > 1000) {
+        conv(stable.w, j * 3, target[j]);
+        target[j].add(root);
+      }
+      vis[j] = stable.v[j];
+    }
+    for (const side of [0, 1]) {
+      if (now - handSeen[side] > 160) pseudoHand(side);
+      for (let j = 0; j < 21; j++) vis[(side ? HAND_B : HAND_A) + j] = vis[side ? 16 : 15];
+    }
     for (let j = 0; j < 75; j++) {
       J[j].lerp(target[j], k);
       V[j] += (vis[j] - V[j]) * k;
     }
   }
 
-  return Object.assign(state, { handSeen, reset, ingest: ingestPose, setNeutral, follow, updateVirtualJoints });
+  return Object.assign(state, {
+    handSeen,
+    reset,
+    ingest: ingestPose,
+    setNeutral,
+    follow,
+    updateVirtualJoints,
+    configure: stability.configure,
+  });
 }

@@ -849,3 +849,181 @@ legend {
     font-size: 9px;
   }
 }
+/* Paneles flotantes (web/app/floating-panels.js): barra para moverlos y esquina para cambiar el tamaño. */
+.floating-window.is-placed {
+  max-width: none;
+  max-height: none;
+  overflow: auto;
+}
+.floating-window > .floating-handle,
+.floating-window > .floating-grip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(9, 19, 17, 0.92);
+  color: #ecf1e9;
+  font-size: 13px;
+  line-height: 1;
+  pointer-events: auto;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.floating-window > .floating-handle {
+  top: 4px;
+  left: 4px;
+  cursor: grab;
+}
+.floating-window > .floating-handle:active {
+  cursor: grabbing;
+}
+.floating-window > .floating-grip {
+  right: 4px;
+  bottom: 4px;
+  cursor: nwse-resize;
+}
+.floating-window:hover > .floating-handle,
+.floating-window:hover > .floating-grip,
+.floating-window:focus-within > .floating-handle,
+.floating-window:focus-within > .floating-grip {
+  opacity: 1;
+}
+.floating-window > .floating-handle:focus-visible,
+.floating-window > .floating-grip:focus-visible {
+  outline: 2px solid #84edbd;
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  .floating-window > .floating-handle,
+  .floating-window > .floating-grip {
+    opacity: 0.85;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating-window > .floating-handle,
+  .floating-window > .floating-grip {
+    transition: none;
+  }
+}
+/* Editor de áreas sobre la escena (web/app/scene-editor.js). */
+.scene-editor {
+  position: fixed;
+  z-index: 8;
+  left: 24px;
+  bottom: 24px;
+  width: min(380px, calc(100vw - 48px));
+  padding: 38px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(9, 19, 17, 0.94);
+  backdrop-filter: blur(14px);
+  color: #ecf1e9;
+  font-size: 12px;
+}
+.scene-editor[hidden] {
+  display: none;
+}
+.scene-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.scene-editor-header h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.scene-editor-header div {
+  display: flex;
+  gap: 6px;
+}
+.scene-editor button {
+  font: inherit;
+  color: #ecf1e9;
+  border: 1px solid #345849;
+  background: #11251f;
+  border-radius: 4px;
+  padding: 8px 10px;
+  min-height: 36px;
+  cursor: pointer;
+}
+.scene-editor-help {
+  color: #a6bfb4;
+  font-size: 11px;
+  margin: 10px 0;
+}
+.scene-editor-map {
+  margin: 0;
+}
+.scene-editor-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border: 1px solid #507663;
+  border-radius: 4px;
+  background: repeating-linear-gradient(45deg, #0c1c18 0 8px, #0f221d 8px 16px);
+  overflow: hidden;
+  touch-action: none;
+}
+.scene-editor-zone {
+  position: absolute;
+  border: 2px solid #84edbd;
+  background: rgba(132, 237, 189, 0.12);
+  cursor: move;
+}
+.participation-editor-video {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scaleX(-1);
+  pointer-events: none;
+}
+.scene-editor-zone:focus-visible {
+  outline: 2px solid #f1c89c;
+  outline-offset: 2px;
+}
+.scene-editor-grip {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 16px;
+  height: 16px;
+  background: #84edbd;
+  cursor: nwse-resize;
+}
+.scene-editor-dots span {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #f1c89c;
+  pointer-events: none;
+}
+.scene-editor-dots span.is-inside {
+  background: #84edbd;
+}
+.scene-editor figcaption {
+  margin-top: 6px;
+  color: #a6bfb4;
+}
+.scene-editor-distance {
+  display: block;
+  margin-top: 14px;
+}
+.scene-editor-distance span {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 6px;
+}
+.scene-editor-distance input {
+  width: 100%;
+  accent-color: #84edbd;
+}

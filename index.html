@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="./event.css" />
     <link rel="stylesheet" href="./modules/products/product-gallery.css" />
     <link rel="stylesheet" href="./modules/settings/settings.css" />
+    <link rel="stylesheet" href="./app/button-editor.css" />
     <script type="importmap">
       { "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }
     </script>
@@ -86,6 +87,14 @@
       <button id="view-button" type="button" aria-pressed="true" title="Retrato / cuerpo completo (V)">Retrato</button>
       <button id="surface-button" type="button" aria-pressed="false" title="Aura astral / humano sólido (M)">
         Aura astral
+      </button>
+      <button
+        id="cursor-button"
+        type="button"
+        aria-pressed="true"
+        title="Cursor de las manos; el avatar te sigue igual (C)"
+      >
+        Cursor
       </button>
       <button id="motion-button" type="button" aria-pressed="false" title="Reducir efectos de movimiento (R)">
         Movimiento
@@ -184,6 +193,8 @@
         <dd>Pantalla completa</dd>
         <dt>M</dt>
         <dd>Aura astral / humano sólido</dd>
+        <dt>C</dt>
+        <dd>Cursor de las manos: activar / desactivar (el avatar te sigue igual)</dd>
         <dt>R</dt>
         <dd>Reducir movimiento ambiental</dd>
         <dt>Q</dt>
@@ -197,6 +208,11 @@
         Para captura de cuerpo completo, deja espacio alrededor de manos y pies y utiliza luz frontal uniforme.
       </p>
     </dialog>
+    <section id="capture-error" role="alert" hidden>
+      <strong>La cámara no pudo iniciarse</strong>
+      <p id="capture-error-message"></p>
+      <button id="capture-retry" type="button">Reintentar cámara</button>
+    </section>
     <div id="debug"></div>
     <div id="fatal" role="alert" hidden>
       <strong>No se pudo iniciar la escena 3D.</strong>

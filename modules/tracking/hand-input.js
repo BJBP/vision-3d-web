@@ -1,14 +1,33 @@
 // Camera-space coordinates arrive mirrored. Hands do not depend on a valid torso.
+import { holdPointer } from './pointer-hold.js';
+import { CURSOR_STABILITY_PRESETS, smoothCursor } from './cursor-smoothing.js';
+
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Part of the camera image (0–1) that maps to the whole screen for the cursor (settings handZone*).
+export const DEFAULT_HAND_ZONE = Object.freeze({ x: 0.12, y: 0.08, width: 0.76, height: 0.84 });
 export class HandInput {
   constructor() {
+    this.zone = DEFAULT_HAND_ZONE;
+    this.stability = 'normal';
     this.reset();
+  }
+  setZone(zone) {
+    const valid = ['x', 'y', 'width', 'height'].every(key => Number.isFinite(zone?.[key]));
+    this.zone = valid && zone.width > 0 && zone.height > 0 ? { ...zone } : DEFAULT_HAND_ZONE;
   }
   reset() {
     this.points = [];
     this.time = -Infinity;
     this.serial = 0;
+  }
+  setStability(preset) {
+    if (preset !== 'legacy' && !Object.hasOwn(CURSOR_STABILITY_PRESETS, preset))
+      throw new Error('Elige una estabilidad de cursor válida.');
+    if (this.stability !== preset) {
+      this.stability = preset;
+      this.reset();
+    }
   }
   sample(pose, hands, time) {
     const wrist = i =>
@@ -54,19 +73,38 @@ export class HandInput {
       if (!old) old = available.toSorted((a, b) => distance(a, p) - distance(b, p))[0];
       if (old && distance(old, p) > 0.35) old = null;
       if (old) available.splice(available.indexOf(old), 1);
-      const x = old ? old.x + (p.x - old.x) * k : p.x,
-        y = old ? old.y + (p.y - old.y) * k : p.y;
+      // Smooth the real hand position; a hand kept still for a while freezes what is shown.
+      const trackX = old ? old.trackX + (p.x - old.trackX) * k : p.x,
+        trackY = old ? old.trackY + (p.y - old.trackY) * k : p.y;
+      const hold = holdPointer(old?.hold ?? null, trackX, trackY, time),
+        { x, y } = hold;
+      const screen =
+        this.stability === 'legacy'
+          ? null
+          : smoothCursor(
+              old?.screen,
+              clamp((p.x - this.zone.x) / this.zone.width, 0.02, 0.98),
+              clamp((p.y - this.zone.y) / this.zone.height, 0.02, 0.98),
+              time,
+              dt,
+              this.stability,
+            );
       const pinched = p.source === 'fingers' && p.pinch < (old?.pinched ? 0.6 : 0.38);
       return {
         ...p,
         x,
         y,
+        trackX,
+        trackY,
+        hold,
+        screen,
+        held: screen?.held ?? hold.held,
         id: old?.id ?? ++this.serial,
         observedAt: time,
         pinched,
         pressed: pinched && !old?.pinched,
-        sx: clamp((x - 0.12) / 0.76, 0.02, 0.98),
-        sy: clamp((y - 0.08) / 0.84, 0.02, 0.98),
+        sx: screen?.x ?? clamp((x - this.zone.x) / this.zone.width, 0.02, 0.98),
+        sy: screen?.y ?? clamp((y - this.zone.y) / this.zone.height, 0.02, 0.98),
       };
     });
     this.time = time;

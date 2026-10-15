@@ -1,13 +1,16 @@
-// Herramientas de administración desde Configuración: colecciones locales (pestaña Colecciones), copia completa
-// del dispositivo y, si el sitio la activa, cuenta con sincronización (pestaña Perfiles). installLocalAdmin({ center, catalog, local, resources, defaultCatalog }).
+// Herramientas de administración desde Configuración: avatares (pestaña Apariencia), colecciones locales (pestaña
+// Colecciones), copia completa del dispositivo y, si el sitio la activa, cuenta con sincronización (pestaña Perfiles).
+// installLocalAdmin({ center, catalog, local, resources, defaultCatalog, renderer }).
 // Un fallo aquí se muestra como aviso y nunca detiene la escena.
+import { createModelThumbnailer, inspectModelRig } from '../modules/avatar/index.js';
 import { mountCollectionEditor } from '../modules/collections/index.js';
+import { mountAvatarManager } from '../modules/settings/index.js';
 import { mountDeviceBackup } from './device-backup.js';
 import { mountAccountPanel } from './account-panel.js';
 import { createAccountApi, fetchSiteConfig } from './account-api.js';
 import { createSyncState } from './account-sync.js';
 
-export function installLocalAdmin({ center, catalog, local, resources, defaultCatalog }) {
+export function installLocalAdmin({ center, catalog, local, resources, defaultCatalog, renderer }) {
   const own = local.read().collections.map(collection => collection.slug);
   const builtIns = defaultCatalog.collections[0].items
     .filter(item => item.model)
@@ -29,6 +32,15 @@ export function installLocalAdmin({ center, catalog, local, resources, defaultCa
       center.message(`No se pudo preparar ${name}. ${error.message || error}`);
     }
   };
+  guard('el administrador de avatares', () => {
+    const thumbnailer = createModelThumbnailer({ renderer });
+    mountAvatarManager(center.panel('look'), {
+      settings: center,
+      resources,
+      inspect: async blob => inspectModelRig(await blob.arrayBuffer()),
+      thumbnail: blob => thumbnailer.render(blob),
+    });
+  });
   guard('la pestaña Colecciones', () =>
     mountCollectionEditor(center.panel('collections'), {
       store: local,
@@ -50,11 +62,13 @@ export function installLocalAdmin({ center, catalog, local, resources, defaultCa
     }),
   );
   // La cuenta solo existe si el sitio la activa (ACCOUNTS_ENABLED=true); por defecto está desactivada.
-  fetchSiteConfig().then(config => {
-    if (config.accounts)
-      guard('la cuenta', () =>
-        mountAccountPanel(center.panel('profiles'), { api: createAccountApi(), sources, state: createSyncState() }),
-      );
-  });
+  // GitHub Pages serves static files and cannot provide accounts or a PocketBase API.
+  if (!location.hostname.endsWith('.github.io'))
+    fetchSiteConfig().then(config => {
+      if (config.accounts)
+        guard('la cuenta', () =>
+          mountAccountPanel(center.panel('profiles'), { api: createAccountApi(), sources, state: createSyncState() }),
+        );
+    });
   return sources;
 }
