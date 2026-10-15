@@ -10,6 +10,15 @@ const WEBCAM_STATUS = {
 
 const URL_SOURCES = ['webcam', 'oak', 'demo'];
 
+// Preserve saved crowd settings while the original Pages cursor uses one full-frame detector.
+export function captureTrackingOptions(options) {
+  const original = options.cursorStability === 'legacy';
+  return {
+    maxParticipants: original || options.modelId ? 1 : options.maxParticipants,
+    participationZone: original ? { x: 0, y: 0, width: 1, height: 1 } : options.participationZone,
+  };
+}
+
 // Explicit URL choices override the presentation default: browser webcam.
 export function initialSource(params) {
   if (params.get('demo') === '1') return 'demo';

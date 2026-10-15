@@ -1,11 +1,20 @@
 // Camera-space coordinates arrive mirrored. Hands do not depend on a valid torso.
 import { holdPointer } from './pointer-hold.js';
 import { CURSOR_STABILITY_PRESETS, smoothCursor } from './cursor-smoothing.js';
+import { assessBodyFrame } from './tracking.js';
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 // Part of the camera image (0–1) that maps to the whole screen for the cursor (settings handZone*).
 export const DEFAULT_HAND_ZONE = Object.freeze({ x: 0.12, y: 0.08, width: 0.76, height: 0.84 });
+
+// Original Pages fed measured hands directly to HandInput, independently of avatar tracking.
+export function cursorObservation(packet, controller, accepted, preset) {
+  if (preset === 'legacy') return { pose: packet.pose, hands: Array.isArray(packet.hands) ? packet.hands : [] };
+  const reliable = !!controller && accepted && assessBodyFrame(controller.pose).ok;
+  return { pose: reliable ? controller.pose : null, hands: reliable ? controller.hands : [] };
+}
+
 export class HandInput {
   constructor() {
     this.zone = DEFAULT_HAND_ZONE;
@@ -76,8 +85,9 @@ export class HandInput {
       // Smooth the real hand position; a hand kept still for a while freezes what is shown.
       const trackX = old ? old.trackX + (p.x - old.trackX) * k : p.x,
         trackY = old ? old.trackY + (p.y - old.trackY) * k : p.y;
-      const hold = holdPointer(old?.hold ?? null, trackX, trackY, time),
-        { x, y } = hold;
+      const hold = this.stability === 'legacy' ? null : holdPointer(old?.hold ?? null, trackX, trackY, time),
+        x = hold?.x ?? trackX,
+        y = hold?.y ?? trackY;
       const screen =
         this.stability === 'legacy'
           ? null
@@ -98,7 +108,7 @@ export class HandInput {
         trackY,
         hold,
         screen,
-        held: screen?.held ?? hold.held,
+        held: screen?.held ?? hold?.held ?? false,
         id: old?.id ?? ++this.serial,
         observedAt: time,
         pinched,

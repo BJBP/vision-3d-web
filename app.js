@@ -7,7 +7,7 @@ import { createAmbientEffects } from './app/ambient-effects.js';
 import { createClockSprite } from './app/clock-sprite.js';
 import { createPoseTracker } from './app/pose-tracker.js';
 import { createCrowdAvatars } from './app/crowd-avatars.js';
-import { createCaptureSources } from './app/capture-sources.js';
+import { createCaptureSources, captureTrackingOptions } from './app/capture-sources.js';
 import { createHud } from './app/hud.js';
 import { installScenePointer } from './app/scene-pointer.js';
 import { installFloatingPanels } from './app/floating-panels.js';
@@ -36,6 +36,7 @@ import {
   assessBodyFrame,
   DEFAULT_HAND_ZONE,
   HandInput,
+  cursorObservation,
   createParticipants,
   createParticipantCursorZone,
 } from './modules/tracking/index.js';
@@ -211,8 +212,7 @@ const sources = createCaptureSources({
     captureWidth: effectiveOptions.captureWidth,
     analysisFps: effectiveOptions.analysisFps,
     preview: options.preview,
-    maxParticipants: options.modelId ? 1 : options.maxParticipants,
-    participationZone: options.participationZone,
+    ...captureTrackingOptions(options),
   }),
   onPacket: packet => consumeCapture(packet),
   onSwitch: source => {
@@ -263,18 +263,18 @@ function consumeCapture(d) {
     const tracked = controller ?? people.find(p => p.observedAt === now && !p.ambiguous);
     if (tracked && tracked.id !== trackedId) {
       tracker.reset();
-      handInput.reset();
-      cursorZone.reset();
-      studio.resetHandInput();
-      gallery.ingestHands([], now);
+      if (options.cursorStability !== 'legacy') {
+        handInput.reset();
+        cursorZone.reset();
+        studio.resetHandInput();
+        gallery.ingestHands([], now);
+      }
       trackedId = tracked.id;
     }
     const accepted = tracked
       ? tracker.ingest(tracked.pose, tracked.hands, clamp((now - lastPoseMsg) / 1000, 0.01, 0.2))
       : false;
-    const reliableControl = !!controller && accepted && assessBodyFrame(controller.pose).ok;
-    const pose = reliableControl ? controller.pose : null;
-    const measuredHands = reliableControl ? controller.hands : [];
+    const { pose, hands: measuredHands } = cursorObservation(d, controller, accepted, options.cursorStability);
     if (options.participantCursor)
       applyHandZone(cursorZone.sample(pose, handZoneOf(options), now, options.cursorStability));
     // Sin cursor (Configuración → Cámara) las manos no llegan a la galería ni al estudio; el avatar las sigue igual.
@@ -382,20 +382,20 @@ function applyOptions(next) {
     cursorZone.reset();
     handInput.reset();
     studio.resetHandInput();
+    gallery.ingestHands([], performance.now());
+  }
+  if ((options.cursorStability === 'legacy') !== (next.cursorStability === 'legacy')) {
+    participants.reset();
+    controllerId = trackedId = null;
   }
   options = { ...next };
   handInput.setStability(options.cursorStability);
   studio.setCursorStability(options.cursorStability);
   tracker.configure(options);
   continuous.configure(options);
-  participants.configure(options);
+  participants.configure({ ...options, ...captureTrackingOptions(options) });
   crowd.configure(options);
-  void webcam
-    .configure({
-      maxParticipants: options.modelId ? 1 : options.maxParticipants,
-      participationZone: options.participationZone,
-    })
-    .catch(error => center.message(error.message));
+  void webcam.configure(captureTrackingOptions(options)).catch(error => center.message(error.message));
   quality = options.quality;
   surfaceOn = options.surface;
   reducedMotion = options.reducedMotion;
@@ -879,8 +879,9 @@ installSceneEditor({
   defaults: { zone: { x: 0, y: 0, width: 1, height: 1 }, distance: 8.6 },
   applyLive: ({ zone }) => {
     if (!zone) return;
-    participants.configure({ ...options, participationZone: zone });
-    void webcam.configure({ participationZone: zone }).catch(error => center.message(error.message));
+    const tracking = captureTrackingOptions({ ...options, participationZone: zone });
+    participants.configure({ ...options, ...tracking });
+    void webcam.configure(tracking).catch(error => center.message(error.message));
   },
 });
 installFloatingPanels();

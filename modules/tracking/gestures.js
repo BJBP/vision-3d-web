@@ -1,5 +1,4 @@
 // Screen coordinates are mirrored by server.py. No finger pose or identity inference.
-import { holdPointer } from './pointer-hold.js';
 import { CURSOR_STABILITY_PRESETS, smoothCursor } from './cursor-smoothing.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -20,14 +19,12 @@ export class BodyPointer {
   reset() {
     this.side = null;
     this.point = null;
-    this.hold = null;
     this.screen = null;
     this.time = -Infinity;
     this.bimanual = null;
   }
   clearPoint() {
     this.point = null;
-    this.hold = null;
     this.screen = null;
   }
   sample(pose, time) {
@@ -92,9 +89,7 @@ export class BodyPointer {
       this.point.x += (target.x - this.point.x) * k;
       this.point.y += (target.y - this.point.y) * k;
     }
-    // A hand kept still for a while freezes the shown point; the smoothed point keeps following the wrist.
-    this.hold = holdPointer(this.hold, this.point.x, this.point.y, time);
-    return { mode: 'point', x: this.hold.x, y: this.hold.y, side: this.side, held: this.hold.held };
+    return { mode: 'point', ...this.point, side: this.side };
   }
 }
 

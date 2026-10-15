@@ -272,6 +272,8 @@ export function createCameraSource({
       analysisFps: active ? fps : 0,
       captureFps: stream?.getVideoTracks()[0]?.getSettings().frameRate || 0,
       processedFrames,
+      maxParticipants: trackingOptions.maxParticipants,
+      participationZone: { ...trackingOptions.participationZone },
       captureWidth: video.videoWidth,
       captureHeight: video.videoHeight,
       previewVisible: visible,

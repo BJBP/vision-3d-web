@@ -478,15 +478,15 @@ export function createSettings({
           ...Object.entries(CURSOR_PROFILES).map(([id, profile]) => [id, profile.label]),
           ['custom', 'Personalizado'],
         ]) +
-        '<p class="settings-help">Estable usa un área fija y suavizado Suave. Clásico se acerca al cursor de GitHub Pages. Los perfiles ajustan solo el cursor y restablecen su área; conservan el número de avatares y la apariencia. Modifica los ajustes o guarda tu propia configuración en Perfiles.</p>' +
+        '<p class="settings-help">Estable usa un área fija y suavizado Suave. Clásico recupera el cursor original de GitHub Pages: una persona, dos manos y toda la imagen, sin fijación ni exigir torso completo. Conserva tus ajustes de participantes y zona para recuperarlos al cambiar de perfil, además de la apariencia y los botones.</p>' +
         select('cursorStability', 'Estabilidad del cursor', [
           ['normal', 'Equilibrado'],
           ['smooth', 'Suave'],
           ['fast', 'Rápido'],
-          ['legacy', 'Anterior'],
+          ['legacy', 'Original de GitHub Pages'],
         ]) +
-        '<p class="settings-help">Reduce el temblor sin dificultar movimientos rápidos. Suave prioriza estabilidad; Rápido responde antes. Anterior recupera el procesamiento previo. Mantén la mano quieta dos segundos para fijar el cursor; muévela claramente para soltarlo.</p>' +
-        '<p class="settings-help">Las partes ausentes conservan brevemente su postura y vuelven suavemente a una posición neutra. Solo las manos detectadas del controlador activan botones. Los GLB propios usan un participante. Marca una zona de participación y deja el público fuera.</p>',
+        '<p class="settings-help">Suave prioriza estabilidad; Rápido responde antes. Mantén la mano quieta dos segundos para fijar el cursor y muévela claramente para soltarlo. Original de GitHub Pages usa el suavizado antiguo sin fijación; cualquier mano detectada puede controlar, incluso sin cuerpo visible.</p>' +
+        '<p class="settings-help">Las partes ausentes conservan brevemente su postura y vuelven suavemente a una posición neutra. En los perfiles actuales solo las manos del controlador activan botones; puedes elegirlo y limitar la zona para dejar el público fuera. Clásico usa el primer cuerpo y las dos manos detectadas en toda la imagen. Los GLB propios usan un participante.</p>',
       true,
     ),
   );
