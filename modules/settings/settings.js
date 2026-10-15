@@ -7,6 +7,8 @@ import { CURSOR_PROFILES, matchingCursorProfile } from './cursor-profiles.js';
 export const STORAGE_KEY = 'vision3d.beta.settings.v2';
 export const LEGACY_STORAGE_KEY = 'vision3d.beta.settings.v1';
 export const PRE_CURSOR_PROFILES_KEY = `${STORAGE_KEY}.before-cursor-profiles`;
+export const PRE_CLASSIC_DEFAULT_KEY = `${STORAGE_KEY}.before-classic-default`;
+export const CLASSIC_DEFAULT_APPLIED_KEY = `${STORAGE_KEY}.classic-default-applied`;
 export const RIG_ROLES = Object.freeze([
   'hips',
   'spine',
@@ -33,8 +35,8 @@ export const DEFAULTS = Object.freeze({
   controllerSlot: 0,
   showMissingParts: true,
   participantCursor: false,
-  cursorStability: 'smooth',
-  cursorProfile: 'stable',
+  cursorStability: 'legacy',
+  cursorProfile: 'classic',
   participationZone: { x: 0, y: 0, width: 1, height: 1 },
   buttonLayout: {},
   background: 'solid',
@@ -222,12 +224,15 @@ export function validateStore(value) {
   const previous = validateSettings(value.current);
   const current = Object.hasOwn(value.current, 'cursorProfile')
     ? previous
-    : validateSettings({ ...previous, ...CURSOR_PROFILES.stable.settings });
+    : validateSettings({ ...previous, ...CURSOR_PROFILES.classic.settings });
   return { version: 2, current, profiles };
 }
 function readStored(storage) {
   const raw = storage?.getItem(STORAGE_KEY) ?? storage?.getItem(LEGACY_STORAGE_KEY);
-  return raw ? validateStore(JSON.parse(raw)) : null;
+  const data = raw ? validateStore(JSON.parse(raw)) : null;
+  if (data?.current.cursorProfile === 'stable' && storage.getItem(CLASSIC_DEFAULT_APPLIED_KEY) === null)
+    data.current = validateSettings({ ...data.current, ...CURSOR_PROFILES.classic.settings });
+  return data;
 }
 export function loadSettings(storage) {
   try {
@@ -263,10 +268,17 @@ export function createSettings({
   try {
     storageSnapshot = localStorage.getItem(STORAGE_KEY);
     const raw = storageSnapshot ?? localStorage.getItem(LEGACY_STORAGE_KEY),
-      data = raw ? validateStore(JSON.parse(raw)) : null;
+      newDefault = localStorage.getItem(CLASSIC_DEFAULT_APPLIED_KEY) === null,
+      data = raw ? readStored(localStorage) : null;
+    if (newDefault) {
+      if (localStorage.getItem(STORAGE_KEY) !== storageSnapshot)
+        throw Error('Otra pestaña cambió los perfiles. Recarga antes de guardar.');
+      if (localStorage.getItem(PRE_CLASSIC_DEFAULT_KEY) === null)
+        localStorage.setItem(PRE_CLASSIC_DEFAULT_KEY, raw ?? '{}');
+    }
     if (data) {
       profiles = data.profiles;
-      if (storageSnapshot === null || !Object.hasOwn(JSON.parse(raw).current, 'cursorProfile')) {
+      if (newDefault || storageSnapshot === null || !Object.hasOwn(JSON.parse(raw).current, 'cursorProfile')) {
         if (localStorage.getItem(STORAGE_KEY) !== storageSnapshot)
           throw Error('Otra pestaña cambió los perfiles. Recarga antes de guardar.');
         if (localStorage.getItem(PRE_CURSOR_PROFILES_KEY) === null) localStorage.setItem(PRE_CURSOR_PROFILES_KEY, raw);
@@ -275,6 +287,8 @@ export function createSettings({
         storageSnapshot = migrated;
       }
     }
+    // Mark adoption only after saving succeeds, so a failed write can be retried.
+    if (newDefault) localStorage.setItem(CLASSIC_DEFAULT_APPLIED_KEY, '1');
   } catch (error) {
     storedError = `No se pudo recuperar el almacenamiento de perfiles. ${error.message}`;
   }
